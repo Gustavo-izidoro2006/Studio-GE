@@ -3,9 +3,16 @@ from decimal import Decimal
 
 
 class Aluno(models.Model):
+	TURNO_CHOICES = [
+		('manha', 'Manhã'),
+		('tarde', 'Tarde'),
+		('noite', 'Noite'),
+	]
+
 	nome = models.CharField(max_length=255)
 	contato = models.CharField(max_length=255, blank=True)
 	data_nascimento = models.DateField(blank=True, null=True)
+	turno = models.CharField(max_length=20, choices=TURNO_CHOICES, default='manha')
 
 
 class Medida(models.Model):

@@ -9,6 +9,7 @@ O instrutor precisa manter uma lista de alunos ativos na academia, com dados bá
 | nome | texto | sim |
 | contato | texto | não |
 | data_nascimento | data | não |
+| turno | escolha (manhã, tarde, noite) | sim |
 
 ## Funcionalidade
 - Listar todos os alunos cadastrados
