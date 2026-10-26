@@ -2,10 +2,12 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { API_ROOT } from '@/constants/api';
+
 type Exercicio = { id: number; nome: string; grupo_muscular: string; descricao: string };
 type ExercicioForm = { nome: string; grupo_muscular: string; descricao: string };
 
-const API_URL = 'http://192.168.100.52:8000/api/exercicios/';
+const API_URL = `${API_ROOT}/exercicios/`;
 const COLORS = { blue: '#185FA5', text: '#17212B', muted: '#6B7680', border: '#D9E0E6', background: '#F7F9FB', white: '#FFFFFF', danger: '#B42318' };
 const EMPTY_FORM: ExercicioForm = { nome: '', grupo_muscular: '', descricao: '' };
 

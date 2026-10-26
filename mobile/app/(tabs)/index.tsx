@@ -15,13 +15,15 @@ import {
   View,
 } from 'react-native';
 
+import { API_ROOT } from '@/constants/api';
+
 type Turno = 'manha' | 'tarde' | 'noite';
 type TurnoFilter = 'todos' | Turno;
 
 type Aluno = { id: number; nome: string; contato: string; data_nascimento: string | null; turno: Turno | null };
 type AlunoForm = { nome: string; contato: string; data_nascimento: string; turno: Turno };
 
-const API_URL = 'http://192.168.100.52:8000/api/alunos/';
+const API_URL = `${API_ROOT}/alunos/`;
 const COLORS = { blue: '#185FA5', yellow: '#EF9F27', text: '#17212B', muted: '#6B7680', border: '#D9E0E6', background: '#F7F9FB', white: '#FFFFFF', danger: '#B42318' };
 const EMPTY_FORM: AlunoForm = { nome: '', contato: '', data_nascimento: '', turno: 'manha' };
 const TURNOS_FILTER: Array<{ value: TurnoFilter; label: string }> = [

@@ -2,13 +2,14 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { API_ROOT } from '@/constants/api';
+
 type Aluno = { id: number; nome: string };
 type Exercicio = { id: number; nome: string; grupo_muscular: string };
 type ItemForm = { exercicio: Exercicio; series: string; repeticoes: string; carga: string; adaptacao: string };
 type Treino = { id: number; aluno: number; nome: string; observacoes: string };
 type ItemTreino = { id: number; treino: number; exercicio: number; series: number | null; repeticoes: number | null; carga: string | number | null; adaptacao: string };
 
-const API_ROOT = 'http://192.168.100.52:8000/api';
 const COLORS = { blue: '#185FA5', yellow: '#EF9F27', text: '#17212B', muted: '#6B7680', border: '#D9E0E6', background: '#F7F9FB', white: '#FFFFFF', danger: '#B42318' };
 
 function items<T>(data: T[] | { results: T[] }) { return Array.isArray(data) ? data : data.results; }

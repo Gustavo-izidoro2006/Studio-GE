@@ -17,6 +17,8 @@ import {
 import { LineChart } from 'react-native-gifted-charts';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { API_ROOT } from '@/constants/api';
+
 type Aluno = {
   nome: string;
   data_nascimento: string | null;
@@ -49,7 +51,6 @@ type Field = {
   icon: React.ComponentProps<typeof MaterialIcons>['name'];
 };
 
-const API_ROOT = 'http://192.168.100.52:8000/api';
 const COLORS = {
   blue: '#185FA5',
   yellow: '#EF9F27',
