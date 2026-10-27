@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -19,13 +20,25 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-3l1z%t)mdg*#78+ky3c!fd%@+owtr3)&lia1ymqh5%8h95n54#'
+# Produção = existe a variável de ambiente DJANGO_SECRET_KEY.
+# Sem ela (computador local), tudo funciona como em desenvolvimento.
+_SECRET_KEY_ENV = os.environ.get('DJANGO_SECRET_KEY')
+PRODUCAO = bool(_SECRET_KEY_ENV)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = ['*']
+if PRODUCAO:
+    SECRET_KEY = _SECRET_KEY_ENV
+    DEBUG = False
+    ALLOWED_HOSTS = [
+        h.strip()
+        for h in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',')
+        if h.strip()
+    ]
+    CORS_ALLOW_ALL_ORIGINS = False
+else:
+    SECRET_KEY = 'django-insecure-3l1z%t)mdg*#78+ky3c!fd%@+owtr3)&lia1ymqh5%8h95n54#'
+    DEBUG = True
+    ALLOWED_HOSTS = ['*']
+    CORS_ALLOW_ALL_ORIGINS = True
 
 
 # Application definition
@@ -52,8 +65,6 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-
-CORS_ALLOW_ALL_ORIGINS = True
 
 ROOT_URLCONF = 'config.urls'
 
@@ -108,9 +119,10 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'pt-br'
 
-TIME_ZONE = 'UTC'
+# O financeiro calcula "hoje" com timezone.localdate(); em UTC o dia virava às 21h no Brasil.
+TIME_ZONE = 'America/Sao_Paulo'
 
 USE_I18N = True
 
@@ -121,6 +133,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
+# Destino do collectstatic (estáticos do painel admin na nuvem)
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 
 # Email
