@@ -7,25 +7,54 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
 } from 'react-native';
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { FieldLabel } from '@/components/field-label';
 import { API_ROOT } from '@/constants/api';
 
 type Turno = 'manha' | 'tarde' | 'noite';
 type TurnoFilter = 'todos' | Turno;
 
-type Aluno = { id: number; nome: string; contato: string; data_nascimento: string | null; turno: Turno | null };
-type AlunoForm = { nome: string; contato: string; data_nascimento: string; turno: Turno };
+type Aluno = {
+  id: number;
+  nome: string;
+  contato: string;
+  data_nascimento: string | null;
+  turno: Turno | null;
+  valor_mensalidade: string | null;
+  dia_vencimento: number | null;
+  ativo: boolean;
+};
+type AlunoForm = {
+  nome: string;
+  contato: string;
+  data_nascimento: string;
+  turno: Turno;
+  valor_mensalidade: string;
+  dia_vencimento: string;
+  ativo: boolean;
+};
 
 const API_URL = `${API_ROOT}/alunos/`;
 const COLORS = { blue: '#185FA5', yellow: '#EF9F27', text: '#17212B', muted: '#6B7680', border: '#D9E0E6', background: '#F7F9FB', white: '#FFFFFF', danger: '#B42318' };
-const EMPTY_FORM: AlunoForm = { nome: '', contato: '', data_nascimento: '', turno: 'manha' };
+const EMPTY_FORM: AlunoForm = {
+  nome: '',
+  contato: '',
+  data_nascimento: '',
+  turno: 'manha',
+  valor_mensalidade: '',
+  dia_vencimento: '',
+  ativo: true,
+};
 const TURNOS_FILTER: Array<{ value: TurnoFilter; label: string }> = [
   { value: 'todos', label: 'Todos' },
   { value: 'manha', label: 'Manhã' },
@@ -62,6 +91,7 @@ function getTurnoLabel(turno: Turno | null) {
 }
 
 export default function AlunosScreen() {
+  const insets = useSafeAreaInsets();
   const [alunos, setAlunos] = useState<Aluno[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -110,6 +140,9 @@ export default function AlunosScreen() {
       contato: aluno.contato ?? '',
       data_nascimento: aluno.data_nascimento ?? '',
       turno: aluno.turno ?? 'manha',
+      valor_mensalidade: aluno.valor_mensalidade ? aluno.valor_mensalidade.replace('.', ',') : '',
+      dia_vencimento: aluno.dia_vencimento ? String(aluno.dia_vencimento) : '',
+      ativo: aluno.ativo,
     });
     setModalVisible(true);
   }
@@ -125,6 +158,24 @@ export default function AlunosScreen() {
       return;
     }
 
+    // A API não exige o dia quando há valor (o clean() do model não roda no serializer), então validamos aqui.
+    const valorTexto = form.valor_mensalidade.trim().replace(',', '.');
+    const valor = valorTexto ? Number(valorTexto) : null;
+    if (valor !== null && (!Number.isFinite(valor) || valor <= 0)) {
+      Alert.alert('Valor inválido', 'Informe um valor de mensalidade maior que zero, por exemplo 150,00.');
+      return;
+    }
+    const diaTexto = form.dia_vencimento.trim();
+    const dia = diaTexto ? Number(diaTexto) : null;
+    if (dia !== null && (!Number.isInteger(dia) || dia < 1 || dia > 28)) {
+      Alert.alert('Dia de vencimento inválido', 'Informe um dia entre 1 e 28.');
+      return;
+    }
+    if (valor !== null && dia === null) {
+      Alert.alert('Dia de vencimento obrigatório', 'Informe o dia de vencimento da mensalidade.');
+      return;
+    }
+
     setSaving(true);
     try {
       const response = await fetch(editingAluno ? `${API_URL}${editingAluno.id}/` : API_URL, {
@@ -135,6 +186,9 @@ export default function AlunosScreen() {
           contato: form.contato.trim(),
           data_nascimento: form.data_nascimento.trim() || null,
           turno: form.turno,
+          valor_mensalidade: valor === null ? null : valor.toFixed(2),
+          dia_vencimento: dia,
+          ativo: form.ativo,
         }),
       });
       if (!response.ok) throw new Error('Não foi possível salvar o aluno.');
@@ -245,19 +299,19 @@ export default function AlunosScreen() {
         <MaterialIcons name="add" size={28} color={COLORS.white} />
       </Pressable>
       <Modal animationType="slide" transparent visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalBackdrop}>
+          <ScrollView style={styles.modalScroll} contentContainerStyle={[styles.modalCard, { paddingBottom: 32 + insets.bottom }]} keyboardShouldPersistTaps="handled">
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{editingAluno ? 'Editar aluno' : 'Novo aluno'}</Text>
               <Pressable onPress={() => setModalVisible(false)}><MaterialIcons name="close" size={24} color={COLORS.muted} /></Pressable>
             </View>
-            <Text style={styles.label}>Nome *</Text>
+            <FieldLabel required style={styles.label}>Nome</FieldLabel>
             <TextInput autoFocus value={form.nome} onChangeText={(nome) => setForm((current) => ({ ...current, nome }))} placeholder="Nome completo" placeholderTextColor="#9AA4AD" style={styles.input} />
             <Text style={styles.label}>Contato</Text>
             <TextInput value={form.contato} onChangeText={(contato) => setForm((current) => ({ ...current, contato }))} placeholder="Telefone ou e-mail" placeholderTextColor="#9AA4AD" style={styles.input} />
             <Text style={styles.label}>Data de nascimento</Text>
             <TextInput value={form.data_nascimento} onChangeText={(data_nascimento) => setForm((current) => ({ ...current, data_nascimento }))} placeholder="AAAA-MM-DD" placeholderTextColor="#9AA4AD" style={styles.input} />
-            <Text style={styles.label}>Turno *</Text>
+            <FieldLabel required style={styles.label}>Turno</FieldLabel>
             <View style={styles.turnoFormRow}>
               {TURNOS_FORM.map((option) => {
                 const active = form.turno === option.value;
@@ -272,10 +326,18 @@ export default function AlunosScreen() {
                 );
               })}
             </View>
+            <Text style={styles.label}>Valor da mensalidade (R$)</Text>
+            <TextInput value={form.valor_mensalidade} onChangeText={(valor_mensalidade) => setForm((current) => ({ ...current, valor_mensalidade }))} keyboardType="decimal-pad" placeholder="150,00" placeholderTextColor="#9AA4AD" style={styles.input} />
+            <Text style={styles.label}>Dia de vencimento (1 a 28)</Text>
+            <TextInput value={form.dia_vencimento} onChangeText={(dia_vencimento) => setForm((current) => ({ ...current, dia_vencimento }))} keyboardType="number-pad" maxLength={2} placeholder="10" placeholderTextColor="#9AA4AD" style={styles.input} />
+            <View style={styles.switchRow}>
+              <Text style={styles.switchLabel}>Aluno ativo</Text>
+              <Switch accessibilityLabel="Aluno ativo" value={form.ativo} onValueChange={(ativo) => setForm((current) => ({ ...current, ativo }))} trackColor={{ true: COLORS.blue, false: COLORS.border }} thumbColor={COLORS.white} />
+            </View>
             <Pressable disabled={saving} onPress={() => void saveAluno()} style={styles.saveButton}>
               {saving ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.saveText}>Salvar aluno</Text>}
             </Pressable>
-          </View>
+          </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
     </View>
@@ -297,6 +359,7 @@ const styles = StyleSheet.create({
   modalBackdrop: { backgroundColor: 'rgba(23, 33, 43, 0.35)', flex: 1, justifyContent: 'flex-end' },
   modalCard: { backgroundColor: COLORS.white, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 22, paddingBottom: 32 },
   modalHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 22 },
+  modalScroll: { backgroundColor: COLORS.white, borderTopLeftRadius: 18, borderTopRightRadius: 18, flexGrow: 0, maxHeight: '90%' },
   modalTitle: { color: COLORS.text, fontSize: 22, fontWeight: '700' },
   retryButton: { backgroundColor: COLORS.blue, borderRadius: 8, marginTop: 18, paddingHorizontal: 18, paddingVertical: 12 },
   retryText: { color: COLORS.white, fontWeight: '700' },
@@ -306,6 +369,8 @@ const styles = StyleSheet.create({
   stateBox: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 30 },
   stateMessage: { color: COLORS.muted, fontSize: 15, marginTop: 8, textAlign: 'center' },
   stateTitle: { color: COLORS.text, fontSize: 19, fontWeight: '700', marginTop: 12, textAlign: 'center' },
+  switchLabel: { color: COLORS.text, fontSize: 16, fontWeight: '600' },
+  switchRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: 44 },
   studentCopy: { flex: 1, marginLeft: 12 },
   studentInfo: { alignItems: 'center', flex: 1, flexDirection: 'row' },
   studentMeta: { color: COLORS.muted, fontSize: 14, marginTop: 4 },

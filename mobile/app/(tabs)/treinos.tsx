@@ -2,6 +2,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { FieldLabel } from '@/components/field-label';
 import { API_ROOT } from '@/constants/api';
 
 type Aluno = { id: number; nome: string };
@@ -86,9 +87,9 @@ export default function TreinosScreen() {
       })}
       {!creating ? <Pressable accessibilityRole="button" onPress={() => setCreating(true)} style={styles.newWorkoutButton}><MaterialIcons name="add" size={20} color={COLORS.white} /><Text style={styles.newWorkoutText}>Novo treino</Text></Pressable> : <>
       <View style={styles.newWorkoutHeader}><Text style={styles.sectionTitle}>Novo treino</Text><Pressable onPress={() => setCreating(false)}><Text style={styles.cancelText}>Cancelar</Text></Pressable></View>
-      <Text style={styles.label}>Aluno *</Text>
+      <FieldLabel required style={styles.label}>Aluno</FieldLabel>
       <Pressable onPress={() => setPicker('aluno')} style={styles.select}><Text style={selectedAluno ? styles.selectText : styles.placeholder}>{selectedAluno?.nome ?? 'Selecione um aluno'}</Text><MaterialIcons name="expand-more" size={24} color={COLORS.muted} /></Pressable>
-      <Text style={styles.label}>Nome do treino *</Text><TextInput value={treinoNome} onChangeText={setTreinoNome} placeholder="Ex.: Treino A" placeholderTextColor="#9AA4AD" style={styles.input} />
+      <FieldLabel required style={styles.label}>Nome do treino</FieldLabel><TextInput value={treinoNome} onChangeText={setTreinoNome} placeholder="Ex.: Treino A" placeholderTextColor="#9AA4AD" style={styles.input} />
       <Text style={styles.label}>Observações</Text><TextInput multiline value={observacoes} onChangeText={setObservacoes} placeholder="Orientações gerais" placeholderTextColor="#9AA4AD" style={[styles.input, styles.textarea]} />
       <View style={styles.exerciseHeading}><Text style={styles.sectionTitle}>Exercícios</Text><Pressable onPress={() => setPicker('exercicio')} style={styles.addExercise}><MaterialIcons name="add" size={18} color={COLORS.blue} /><Text style={styles.addText}>Adicionar</Text></Pressable></View>
       {treinoItens.map((item, index) => <View key={item.exercicio.id} style={styles.itemCard}>

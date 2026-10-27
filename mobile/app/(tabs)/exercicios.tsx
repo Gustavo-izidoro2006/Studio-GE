@@ -1,7 +1,10 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { FieldLabel } from '@/components/field-label';
 import { API_ROOT } from '@/constants/api';
 
 type Exercicio = { id: number; nome: string; grupo_muscular: string; descricao: string };
@@ -12,6 +15,7 @@ const COLORS = { blue: '#185FA5', text: '#17212B', muted: '#6B7680', border: '#D
 const EMPTY_FORM: ExercicioForm = { nome: '', grupo_muscular: '', descricao: '' };
 
 export default function ExerciciosScreen() {
+  const insets = useSafeAreaInsets();
   const [exercicios, setExercicios] = useState<Exercicio[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -93,9 +97,9 @@ export default function ExerciciosScreen() {
     />}
     <Pressable accessibilityLabel="Adicionar exercício" onPress={openCreate} style={styles.fab}><MaterialIcons name="add" size={28} color={COLORS.white} /></Pressable>
     <Modal animationType="slide" transparent visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.backdrop}><View style={styles.modal}>
+      <KeyboardAvoidingView behavior="padding" style={styles.backdrop}><View style={[styles.modal, { paddingBottom: 32 + insets.bottom }]}>
         <View style={styles.modalHeader}><Text style={styles.modalTitle}>{editing ? 'Editar exercício' : 'Novo exercício'}</Text><Pressable onPress={() => setModalVisible(false)}><MaterialIcons name="close" size={24} color={COLORS.muted} /></Pressable></View>
-        <Text style={styles.label}>Nome *</Text><TextInput autoFocus value={form.nome} onChangeText={(nome) => setForm((current) => ({ ...current, nome }))} placeholder="Nome do exercício" placeholderTextColor="#9AA4AD" style={styles.input} />
+        <FieldLabel required style={styles.label}>Nome</FieldLabel><TextInput autoFocus value={form.nome} onChangeText={(nome) => setForm((current) => ({ ...current, nome }))} placeholder="Nome do exercício" placeholderTextColor="#9AA4AD" style={styles.input} />
         <Text style={styles.label}>Grupo muscular</Text><TextInput value={form.grupo_muscular} onChangeText={(grupo_muscular) => setForm((current) => ({ ...current, grupo_muscular }))} placeholder="Ex.: Peito" placeholderTextColor="#9AA4AD" style={styles.input} />
         <Text style={styles.label}>Descrição</Text><TextInput multiline value={form.descricao} onChangeText={(descricao) => setForm((current) => ({ ...current, descricao }))} placeholder="Orientações ou detalhes" placeholderTextColor="#9AA4AD" style={[styles.input, styles.textarea]} />
         <Pressable disabled={saving} onPress={() => void saveExercicio()} style={styles.save}>{saving ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.saveText}>Salvar exercício</Text>}</Pressable>

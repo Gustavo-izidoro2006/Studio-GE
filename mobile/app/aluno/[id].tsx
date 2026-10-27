@@ -6,7 +6,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,8 +14,9 @@ import {
   View,
 } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { FieldLabel } from '@/components/field-label';
 import { API_ROOT } from '@/constants/api';
 
 type Aluno = {
@@ -132,6 +132,7 @@ const metricCategories: { title: string; options: { key: MetricKey; label: strin
 ];
 
 export default function MedidasAlunoScreen() {
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [aluno, setAluno] = useState<Aluno | null>(null);
   const [medida, setMedida] = useState<Medida | null>(null);
@@ -474,7 +475,7 @@ export default function MedidasAlunoScreen() {
         </ScrollView>
         <Modal animationType="slide" transparent visible={metricSelectorVisible} onRequestClose={() => setMetricSelectorVisible(false)}>
           <Pressable style={styles.metricModalBackdrop} onPress={() => setMetricSelectorVisible(false)}>
-            <Pressable style={styles.metricModalCard} onPress={(event) => event.stopPropagation()}>
+            <Pressable style={[styles.metricModalCard, { paddingBottom: 30 + insets.bottom }]} onPress={(event) => event.stopPropagation()}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Escolher métrica</Text>
                 <Pressable accessibilityLabel="Fechar seletor de métrica" onPress={() => setMetricSelectorVisible(false)} style={styles.modalCloseButton}>
@@ -567,7 +568,7 @@ export default function MedidasAlunoScreen() {
       </ScrollView>
       <Modal animationType="slide" transparent visible={comparisonMetricSelectorVisible} onRequestClose={() => setComparisonMetricSelectorVisible(false)}>
         <Pressable style={styles.metricModalBackdrop} onPress={() => setComparisonMetricSelectorVisible(false)}>
-          <Pressable style={styles.metricModalCard} onPress={(event) => event.stopPropagation()}>
+          <Pressable style={[styles.metricModalCard, { paddingBottom: 30 + insets.bottom }]} onPress={(event) => event.stopPropagation()}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Métricas da comparação</Text>
               <Pressable accessibilityLabel="Fechar filtro de métricas" onPress={() => setComparisonMetricSelectorVisible(false)} style={styles.modalCloseButton}>
@@ -601,7 +602,7 @@ export default function MedidasAlunoScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <SafeAreaView edges={['top']} style={styles.safeArea}>
+      <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <View style={styles.header}>
           <Pressable accessibilityLabel="Voltar" onPress={() => router.back()} style={styles.headerButton}>
             <MaterialIcons name="arrow-back" size={24} color={COLORS.blue} />
@@ -636,8 +637,8 @@ export default function MedidasAlunoScreen() {
         )}
       </SafeAreaView>
       <Modal animationType="slide" transparent visible={formVisible} onRequestClose={() => setFormVisible(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { paddingBottom: 30 + insets.bottom }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Nova avaliação</Text>
               <Pressable accessibilityLabel="Fechar formulário" onPress={() => setFormVisible(false)}>
@@ -646,7 +647,7 @@ export default function MedidasAlunoScreen() {
             </View>
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={styles.formHint}>Preencha apenas os campos disponíveis.</Text>
-              <Text style={styles.formLabel}>Data da avaliação *</Text>
+              <FieldLabel required style={styles.formLabel}>Data da avaliação</FieldLabel>
               <TextInput value={form.data_avaliacao} onChangeText={(value) => setForm((current) => ({ ...current, data_avaliacao: value }))} placeholder="AAAA-MM-DD" placeholderTextColor="#9AA4AD" style={styles.formInput} />
               {fields.map((field) => (
                 <View key={field.key}>

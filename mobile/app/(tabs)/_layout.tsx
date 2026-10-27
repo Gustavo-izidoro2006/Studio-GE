@@ -3,7 +3,13 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { HapticTab } from '@/components/haptic-tab';
+
+// Altura original da barra (ícones + rótulos); o inset do sistema é somado a ela.
+const TAB_BAR_HEIGHT = 68;
+const TAB_BAR_PADDING_BOTTOM = 6;
 
 const COLORS = {
   active: '#185FA5',
@@ -30,6 +36,8 @@ function HeaderIcon({ name }: { name: React.ComponentProps<typeof MaterialIcons>
 }
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+
   return (
     <Tabs
       screenOptions={{
@@ -40,7 +48,7 @@ export default function TabLayout() {
         headerStyle: styles.header,
         tabBarActiveTintColor: COLORS.active,
         tabBarInactiveTintColor: COLORS.inactive,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: [styles.tabBar, { height: TAB_BAR_HEIGHT + insets.bottom, paddingBottom: TAB_BAR_PADDING_BOTTOM + insets.bottom }],
         tabBarLabelStyle: styles.tabLabel,
         tabBarButton: HapticTab,
       }}>
@@ -69,6 +77,14 @@ export default function TabLayout() {
           tabBarIcon: ({ focused }) => <TabIcon name="event-note" focused={focused} />,
           headerLeft: () => <HeaderIcon name="menu" />,
           headerRight: () => <HeaderIcon name="add" />,
+        }}
+      />
+      <Tabs.Screen
+        name="financeiro"
+        options={{
+          title: 'Financeiro',
+          tabBarIcon: ({ focused }) => <TabIcon name="attach-money" focused={focused} />,
+          headerLeft: () => <HeaderIcon name="menu" />,
         }}
       />
       <Tabs.Screen
@@ -118,8 +134,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     borderTopColor: '#E4E7EA',
     borderTopWidth: StyleSheet.hairlineWidth,
-    height: 68,
-    paddingBottom: 6,
     paddingTop: 5,
   },
   tabLabel: {
