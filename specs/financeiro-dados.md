@@ -22,7 +22,7 @@ Uma cobrança mensal de um aluno.
 | competencia | data | sim | Sempre o dia 1 do mês cobrado |
 | valor | dinheiro (2 casas) | sim | Copiado do aluno ao gerar. Mudar o valor do aluno depois **não** altera mensalidades já geradas |
 | data_vencimento | data | sim | Mês da competência + dia_vencimento do aluno |
-| data_pagamento | data | não | Vazio = ainda não pago |
+| data_pagamento | data e hora | não | Vazio = ainda não pago; registra o instante em que o instrutor marcou o pagamento |
 
 - Só existe **uma mensalidade por aluno por competência**.
 - Valores calculados (nunca digitados):
@@ -58,8 +58,9 @@ Uma cobrança mensal de um aluno.
 - **Pendências:** mensalidades não pagas de M **mais** as atrasadas de meses anteriores. Ordem: atrasadas primeiro (maior atraso no topo), depois as pendentes por vencimento mais próximo.
 
 ## Ações
-- Marcar mensalidade como paga (data de pagamento = hoje).
+- Marcar mensalidade como paga (data e hora do registro).
 - Desfazer pagamento (limpa a data), para corrigir toque errado.
+- Consultar o histórico de mensalidades pagas, ordenado da mais recente para a mais antiga.
 - Cadastrar, editar e excluir despesas.
 - Consultar o resumo de qualquer mês (indicadores, série e pendências).
 
@@ -78,6 +79,7 @@ Uma cobrança mensal de um aluno.
 - [ ] Excluir um aluno mantém suas mensalidades no histórico, com o nome original.
 - [ ] Status e dias de atraso mudam sozinhos conforme a data passa, sem edição manual.
 - [ ] Marcar como paga reduz a_receber e aumenta recebido e saldo na mesma hora; desfazer reverte.
+- [ ] O histórico mostra nome, valor e data/hora de cada mensalidade paga, da mais recente para a mais antiga.
 - [ ] Despesa com valor zero ou negativo não é aceita.
 - [ ] Mês sem nenhum dado devolve todos os indicadores zerados, sem erro.
 - [ ] Mensalidade atrasada de mês anterior aparece nas pendências do mês atual.

@@ -26,6 +26,7 @@ Cada avaliação física do aluno gera um novo registro de medidas (histórico),
 
 ## Funcionalidade
 - Registrar nova medida para um aluno
+- Informar a data da avaliação em `DD/MM/AAAA`, com separadores automáticos; o app envia para a API como `AAAA-MM-DD`.
 - Listar histórico de medidas do aluno (mais recente primeiro)
 - Exibir IMC calculado em destaque na tela de detalhe
 

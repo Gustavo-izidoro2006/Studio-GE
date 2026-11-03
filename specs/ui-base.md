@@ -8,7 +8,7 @@
 ## Estrutura de tela
 - **Header:** ícone de menu (esquerda), título centralizado com nome da tela atual, ícone de ação (direita — ex: adicionar)
 - **Navegação:** bottom tab bar fixa, 5 abas — Alunos, Exercícios, Treinos, Financeiro, Perfil
-  - Aba ativa: ícone e texto em azul, indicador amarelo (barra fina) embaixo
+  - Aba ativa: ícone e texto em azul, indicador amarelo (barra fina) abaixo do rótulo e proporcional à largura do texto
   - Aba inativa: ícone e texto em cinza
 
 ## Critérios de aceite

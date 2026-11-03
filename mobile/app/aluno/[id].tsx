@@ -17,7 +17,9 @@ import { LineChart } from 'react-native-gifted-charts';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FieldLabel } from '@/components/field-label';
+import { DateInput } from '@/components/date-input';
 import { API_ROOT } from '@/constants/api';
+import { converterDataParaISO, dataHojeBrasileira } from '@/utils/date';
 
 type Aluno = {
   nome: string;
@@ -80,7 +82,7 @@ const fields: Field[] = [
 const measurementKeys: MedidaKey[] = fields.map((field) => field.key);
 
 const emptyForm: MedidaForm = {
-  data_avaliacao: new Date().toISOString().slice(0, 10),
+  data_avaliacao: dataHojeBrasileira(),
   peso: '', altura: '', braco: '', abdomen: '', torax: '', cintura: '', quadril: '', perna: '', suprailiaca: '', subescapular: '', panturrilha: '', triceps: '',
 };
 
@@ -199,15 +201,16 @@ export default function MedidasAlunoScreen() {
   }
 
   async function saveMeasure() {
-    if (!form.data_avaliacao.trim()) {
-      Alert.alert('Data obrigatória', 'Informe a data da avaliação.');
+    const dataAvaliacao = converterDataParaISO(form.data_avaliacao.trim());
+    if (!dataAvaliacao) {
+      Alert.alert('Data inválida', 'Informe uma data válida no formato DD/MM/AAAA.');
       return;
     }
 
     setSaving(true);
     const payload: Record<string, string | number | null> = {
       aluno: Number(id),
-      data_avaliacao: form.data_avaliacao.trim(),
+      data_avaliacao: dataAvaliacao,
     };
     measurementKeys.forEach((key) => {
       const value = form[key];
@@ -648,7 +651,7 @@ export default function MedidasAlunoScreen() {
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={styles.formHint}>Preencha apenas os campos disponíveis.</Text>
               <FieldLabel required style={styles.formLabel}>Data da avaliação</FieldLabel>
-              <TextInput value={form.data_avaliacao} onChangeText={(value) => setForm((current) => ({ ...current, data_avaliacao: value }))} placeholder="AAAA-MM-DD" placeholderTextColor="#9AA4AD" style={styles.formInput} />
+              <DateInput accessibilityLabel="Data da avaliação" value={form.data_avaliacao} onChangeText={(data_avaliacao) => setForm((current) => ({ ...current, data_avaliacao }))} style={styles.formInput} />
               {fields.map((field) => (
                 <View key={field.key}>
                   <Text style={styles.formLabel}>{field.label}</Text>

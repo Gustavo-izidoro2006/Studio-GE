@@ -79,7 +79,7 @@ class Mensalidade(models.Model):
 	competencia = models.DateField()
 	valor = models.DecimalField(max_digits=8, decimal_places=2)
 	data_vencimento = models.DateField()
-	data_pagamento = models.DateField(blank=True, null=True)
+	data_pagamento = models.DateTimeField(blank=True, null=True)
 
 	class Meta:
 		ordering = ['-competencia', 'aluno_nome']

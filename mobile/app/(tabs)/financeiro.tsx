@@ -20,7 +20,9 @@ import { BarChart } from 'react-native-gifted-charts';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FieldLabel } from '@/components/field-label';
+import { DateInput } from '@/components/date-input';
 import { API_ROOT } from '@/constants/api';
+import { converterDataParaISO, dataHojeBrasileira, formatarDataParaEntrada } from '@/utils/date';
 
 type IconName = React.ComponentProps<typeof MaterialIcons>['name'];
 
@@ -47,6 +49,7 @@ type Resumo = {
   pendencias: Pendencia[];
 };
 type Despesa = { id: number; descricao: string; categoria: string; valor: string; data: string };
+type Pagamento = { id: number; aluno_nome: string; valor: string; data_pagamento: string };
 type DespesaForm = { descricao: string; categoria: string; valor: string; data: string };
 
 const COLORS = { blue: '#185FA5', yellow: '#EF9F27', text: '#17212B', muted: '#6B7680', border: '#D9E0E6', background: '#F7F9FB', white: '#FFFFFF', danger: '#B42318', lightBlue: '#DCEAF7', lightYellow: '#FCEBCB', lightRed: '#FBE4E1', lightGreen: '#DFF1E3', green: '#1E6B35' };
@@ -68,11 +71,6 @@ function pad(n: number) {
 function mesAtual() {
   const hoje = new Date();
   return `${hoje.getFullYear()}-${pad(hoje.getMonth() + 1)}`;
-}
-
-function hojeISO() {
-  const hoje = new Date();
-  return `${hoje.getFullYear()}-${pad(hoje.getMonth() + 1)}-${pad(hoje.getDate())}`;
 }
 
 function somarMes(mes: string, delta: number) {
@@ -101,6 +99,21 @@ function dinheiro(valor: string | number) {
 function formatarData(iso: string) {
   const [ano, mes, dia] = iso.split('-');
   return `${dia}/${mes}/${ano}`;
+}
+
+function formatarDataHora(iso: string) {
+  return new Date(iso).toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Sao_Paulo',
+  });
+}
+
+function normalizarBusca(valor: string) {
+  return valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
 }
 
 function diasAteVencer(iso: string) {
@@ -145,11 +158,16 @@ export default function FinanceiroScreen() {
 
   const [formVisible, setFormVisible] = useState(false);
   const [editando, setEditando] = useState<Despesa | null>(null);
-  const [form, setForm] = useState<DespesaForm>({ descricao: '', categoria: 'outros', valor: '', data: hojeISO() });
+  const [form, setForm] = useState<DespesaForm>({ descricao: '', categoria: 'outros', valor: '', data: dataHojeBrasileira() });
   const [saving, setSaving] = useState(false);
   const [listaVisible, setListaVisible] = useState(false);
   const [despesas, setDespesas] = useState<Despesa[]>([]);
   const [listaLoading, setListaLoading] = useState(false);
+  const [historicoVisible, setHistoricoVisible] = useState(false);
+  const [pagamentos, setPagamentos] = useState<Pagamento[]>([]);
+  const [buscaHistorico, setBuscaHistorico] = useState('');
+  const [historicoLoading, setHistoricoLoading] = useState(false);
+  const [historicoError, setHistoricoError] = useState(false);
 
   const carregar = useCallback(async (alvo: string, silencioso = false) => {
     if (!silencioso) setLoading(true);
@@ -195,13 +213,13 @@ export default function FinanceiroScreen() {
 
   function abrirNovaDespesa() {
     setEditando(null);
-    setForm({ descricao: '', categoria: 'outros', valor: '', data: hojeISO() });
+    setForm({ descricao: '', categoria: 'outros', valor: '', data: dataHojeBrasileira() });
     setFormVisible(true);
   }
 
   function abrirEdicao(despesa: Despesa) {
     setEditando(despesa);
-    setForm({ descricao: despesa.descricao, categoria: despesa.categoria, valor: despesa.valor.replace('.', ','), data: despesa.data });
+    setForm({ descricao: despesa.descricao, categoria: despesa.categoria, valor: despesa.valor.replace('.', ','), data: formatarDataParaEntrada(despesa.data) });
     setFormVisible(true);
   }
 
@@ -210,14 +228,15 @@ export default function FinanceiroScreen() {
     const valor = Number(form.valor.trim().replace(',', '.'));
     if (!descricao) return Alert.alert('Descrição obrigatória', 'Informe a descrição da despesa.');
     if (!Number.isFinite(valor) || valor <= 0) return Alert.alert('Valor inválido', 'Informe um valor maior que zero, por exemplo 120,00.');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(form.data.trim())) return Alert.alert('Data inválida', 'Use o formato AAAA-MM-DD.');
+    const data = converterDataParaISO(form.data.trim());
+    if (!data) return Alert.alert('Data inválida', 'Informe uma data válida no formato DD/MM/AAAA.');
 
     setSaving(true);
     try {
       await pedir(editando ? `${API_ROOT}/despesas/${editando.id}/` : `${API_ROOT}/despesas/`, {
         method: editando ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ descricao, categoria: form.categoria, valor: valor.toFixed(2), data: form.data.trim() }),
+        body: JSON.stringify({ descricao, categoria: form.categoria, valor: valor.toFixed(2), data }),
       });
       setFormVisible(false);
       await carregar(mes, true);
@@ -243,6 +262,24 @@ export default function FinanceiroScreen() {
   function abrirLista() {
     setListaVisible(true);
     void carregarDespesas();
+  }
+
+  async function carregarHistorico() {
+    setHistoricoLoading(true);
+    setHistoricoError(false);
+    try {
+      setPagamentos(await pedir<Pagamento[]>(`${API_ROOT}/mensalidades/?pagas=true`));
+    } catch {
+      setHistoricoError(true);
+    } finally {
+      setHistoricoLoading(false);
+    }
+  }
+
+  function abrirHistorico() {
+    setBuscaHistorico('');
+    setHistoricoVisible(true);
+    void carregarHistorico();
   }
 
   function opcoesDespesa(despesa: Despesa) {
@@ -366,6 +403,11 @@ export default function FinanceiroScreen() {
             <View style={[styles.progressFill, { width: `${Math.min(100, percentual)}%` }]} />
           </View>
           <Text style={styles.progressSmall}>{textoAtraso}</Text>
+          <Pressable accessibilityRole="button" onPress={abrirHistorico} style={styles.historyLink}>
+            <MaterialIcons name="history" size={20} color={COLORS.blue} />
+            <Text style={styles.linkText}>Histórico de pagamentos</Text>
+            <MaterialIcons name="chevron-right" size={24} color={COLORS.blue} />
+          </Pressable>
         </View>
 
         <View style={styles.section}>
@@ -438,6 +480,10 @@ export default function FinanceiroScreen() {
   }
 
   const totalDespesas = despesas.reduce((soma, d) => soma + Number(d.valor), 0);
+  const termoBuscaHistorico = normalizarBusca(buscaHistorico.trim());
+  const pagamentosFiltrados = pagamentos.filter((pagamento) =>
+    normalizarBusca(pagamento.aluno_nome).includes(termoBuscaHistorico),
+  );
 
   return (
     <View style={styles.container}>
@@ -492,7 +538,7 @@ export default function FinanceiroScreen() {
             <FieldLabel required style={styles.label}>Valor (R$)</FieldLabel>
             <TextInput value={form.valor} onChangeText={(valor) => setForm((c) => ({ ...c, valor }))} keyboardType="decimal-pad" placeholder="120,00" placeholderTextColor="#9AA4AD" style={styles.input} />
             <FieldLabel required style={styles.label}>Data</FieldLabel>
-            <TextInput value={form.data} onChangeText={(data) => setForm((c) => ({ ...c, data }))} placeholder="AAAA-MM-DD" placeholderTextColor="#9AA4AD" style={styles.input} />
+            <DateInput accessibilityLabel="Data da despesa" value={form.data} onChangeText={(data) => setForm((c) => ({ ...c, data }))} style={styles.input} />
             <Pressable disabled={saving} onPress={() => void salvarDespesa()} style={styles.saveButton}>
               {saving ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.saveText}>Salvar despesa</Text>}
             </Pressable>
@@ -534,6 +580,70 @@ export default function FinanceiroScreen() {
           </Pressable>
         </View>
       </Modal>
+
+      <Modal animationType="slide" visible={historicoVisible} onRequestClose={() => setHistoricoVisible(false)}>
+        <View style={[styles.listaContainer, { paddingBottom: 16 + insets.bottom }]}>
+          <View style={styles.listaHeader}>
+            <View>
+              <Text style={styles.modalTitle}>Histórico de pagamentos</Text>
+              <Text style={styles.listaTotal}>Mensalidades pagas</Text>
+            </View>
+            <Pressable accessibilityLabel="Fechar" onPress={() => setHistoricoVisible(false)} style={styles.closeButton}>
+              <MaterialIcons name="close" size={24} color={COLORS.muted} />
+            </Pressable>
+          </View>
+          <View style={styles.historySearch}>
+            <MaterialIcons name="search" size={22} color={COLORS.muted} />
+            <TextInput
+              accessibilityLabel="Buscar pagamento pelo nome do aluno"
+              onChangeText={setBuscaHistorico}
+              placeholder="Buscar aluno pelo nome"
+              placeholderTextColor="#9AA4AD"
+              returnKeyType="search"
+              style={styles.historySearchInput}
+              value={buscaHistorico}
+            />
+            {buscaHistorico.length > 0 && (
+              <Pressable
+                accessibilityLabel="Limpar busca"
+                onPress={() => setBuscaHistorico('')}
+                style={styles.historySearchClear}
+              >
+                <MaterialIcons name="close" size={20} color={COLORS.muted} />
+              </Pressable>
+            )}
+          </View>
+          {historicoLoading ? (
+            <ActivityIndicator color={COLORS.blue} size="large" style={styles.loader} />
+          ) : historicoError ? (
+            <View style={styles.stateBox}>
+              <Text style={styles.emptyText}>Não foi possível carregar o histórico.</Text>
+              <Pressable accessibilityRole="button" onPress={() => void carregarHistorico()} style={styles.retryButton}>
+                <Text style={styles.retryText}>Tentar de novo</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <FlatList
+              data={pagamentosFiltrados}
+              keyExtractor={(pagamento) => String(pagamento.id)}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>
+                  {buscaHistorico.trim() ? 'Nenhum pagamento encontrado para esse aluno.' : 'Nenhum pagamento registrado.'}
+                </Text>
+              }
+              renderItem={({ item }) => (
+                <View style={styles.despesaRow}>
+                  <View style={styles.pendCopy}>
+                    <Text style={styles.pendName}>{item.aluno_nome}</Text>
+                    <Text style={styles.pendStatus}>Pago em {formatarDataHora(item.data_pagamento)}</Text>
+                  </View>
+                  <Text style={styles.pendValue}>{dinheiro(item.valor)}</Text>
+                </View>
+              )}
+            />
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -557,6 +667,10 @@ const styles = StyleSheet.create({
   emptyText: { color: COLORS.muted, fontSize: 15, paddingVertical: 12 },
   headerAction: { alignItems: 'center', flexDirection: 'row', height: 44, justifyContent: 'center', minWidth: 44, paddingHorizontal: 10 },
   headerActionText: { color: COLORS.blue, fontSize: 15, fontWeight: '700' },
+  historySearch: { alignItems: 'center', backgroundColor: COLORS.background, borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, flexDirection: 'row', marginBottom: 8, minHeight: 48, paddingHorizontal: 12 },
+  historySearchClear: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
+  historySearchInput: { color: COLORS.text, flex: 1, fontSize: 16, minHeight: 44, paddingHorizontal: 10 },
+  historyLink: { alignItems: 'center', borderTopColor: COLORS.border, borderTopWidth: 1, flexDirection: 'row', marginTop: 12, minHeight: 44, paddingTop: 8 },
   input: { backgroundColor: COLORS.white, borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, color: COLORS.text, fontSize: 16, height: 48, marginBottom: 16, paddingHorizontal: 14 },
   label: { color: COLORS.text, fontSize: 14, fontWeight: '600', marginBottom: 7 },
   legend: { flexDirection: 'row', gap: 16, marginTop: 10 },

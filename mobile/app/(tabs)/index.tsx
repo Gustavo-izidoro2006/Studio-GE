@@ -19,7 +19,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FieldLabel } from '@/components/field-label';
+import { DateInput } from '@/components/date-input';
 import { API_ROOT } from '@/constants/api';
+import { converterDataParaISO, formatarDataParaEntrada } from '@/utils/date';
 
 type Turno = 'manha' | 'tarde' | 'noite';
 type TurnoFilter = 'todos' | Turno;
@@ -138,7 +140,7 @@ export default function AlunosScreen() {
     setForm({
       nome: aluno.nome,
       contato: aluno.contato ?? '',
-      data_nascimento: aluno.data_nascimento ?? '',
+      data_nascimento: formatarDataParaEntrada(aluno.data_nascimento),
       turno: aluno.turno ?? 'manha',
       valor_mensalidade: aluno.valor_mensalidade ? aluno.valor_mensalidade.replace('.', ',') : '',
       dia_vencimento: aluno.dia_vencimento ? String(aluno.dia_vencimento) : '',
@@ -155,6 +157,12 @@ export default function AlunosScreen() {
     }
     if (!form.turno) {
       Alert.alert('Turno obrigatório', 'Selecione o turno do aluno para continuar.');
+      return;
+    }
+    const dataNascimentoTexto = form.data_nascimento.trim();
+    const dataNascimento = dataNascimentoTexto ? converterDataParaISO(dataNascimentoTexto) : null;
+    if (dataNascimentoTexto && !dataNascimento) {
+      Alert.alert('Data inválida', 'Informe uma data válida no formato DD/MM/AAAA.');
       return;
     }
 
@@ -184,7 +192,7 @@ export default function AlunosScreen() {
         body: JSON.stringify({
           nome,
           contato: form.contato.trim(),
-          data_nascimento: form.data_nascimento.trim() || null,
+          data_nascimento: dataNascimento,
           turno: form.turno,
           valor_mensalidade: valor === null ? null : valor.toFixed(2),
           dia_vencimento: dia,
@@ -310,7 +318,7 @@ export default function AlunosScreen() {
             <Text style={styles.label}>Contato</Text>
             <TextInput value={form.contato} onChangeText={(contato) => setForm((current) => ({ ...current, contato }))} placeholder="Telefone ou e-mail" placeholderTextColor="#9AA4AD" style={styles.input} />
             <Text style={styles.label}>Data de nascimento</Text>
-            <TextInput value={form.data_nascimento} onChangeText={(data_nascimento) => setForm((current) => ({ ...current, data_nascimento }))} placeholder="AAAA-MM-DD" placeholderTextColor="#9AA4AD" style={styles.input} />
+            <DateInput accessibilityLabel="Data de nascimento" value={form.data_nascimento} onChangeText={(data_nascimento) => setForm((current) => ({ ...current, data_nascimento }))} style={styles.input} />
             <FieldLabel required style={styles.label}>Turno</FieldLabel>
             <View style={styles.turnoFormRow}>
               {TURNOS_FORM.map((option) => {

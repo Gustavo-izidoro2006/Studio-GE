@@ -9,6 +9,7 @@ Quinta aba do app. O instrutor abre e responde, de cima para baixo: "Como estou 
 1. **Seletor de mês:** seta para o mês anterior, nome do mês e ano no centro, seta para o próximo. Não é possível avançar além do mês atual.
 2. **Quatro cartões de resumo** (2 por linha): Recebido, Despesas, Saldo, A receber. Cada um com ícone, rótulo e valor em reais.
 3. **Barra de progresso do mês:** texto "Previsto no mês: R$ X" e "N% recebido", com barra preenchida proporcional. Logo abaixo, uma linha pequena: "N de M em atraso (P%)".
+   - Botão "Histórico de pagamentos" abre uma tela com os pagamentos marcados, mostrando nome do aluno, valor e data/hora, do mais recente para o mais antigo.
 4. **Gráfico "Receita x despesa":** barras agrupadas dos últimos 6 meses (azul = receita, amarelo = despesa), nome do mês abreviado embaixo, legenda com texto. Tocar numa barra mostra o valor exato.
 5. **Lista "Pagamentos em atraso" / pendências:** uma linha por mensalidade com ícone de estado, nome do aluno, texto de situação, valor e botão **Pago**. Contador de atrasados no título.
 6. **Despesas:** botão "+ Despesa" (ação à direita do header) e atalho "Ver despesas do mês".
@@ -17,7 +18,10 @@ Quinta aba do app. O instrutor abre e responde, de cima para baixo: "Como estou 
 - Ao abrir a aba, o mês exibido é o atual.
 - Marcar **Pago** atualiza cartões, barra e lista na hora, sem pedir confirmação. Aparece um aviso curto "Marcado como pago · Desfazer" por alguns segundos.
 - "+ Despesa" abre formulário: descrição, categoria (seletor), valor, data (padrão: hoje). Salvar volta ao Financeiro com os números atualizados.
+- A data da despesa é digitada em `DD/MM/AAAA`; barras são inseridas automaticamente entre dia, mês e ano, e a API recebe `AAAA-MM-DD`.
 - "Ver despesas do mês" abre a lista do mês selecionado (descrição, categoria, data, valor), com total no topo. Tocar numa despesa permite editar ou excluir; excluir pede confirmação.
+- "Histórico de pagamentos" abre a lista de mensalidades pagas; cada linha mostra nome do aluno, valor e data/hora em que foi marcada como paga.
+- No histórico, a busca por parte do nome filtra os pagamentos sem diferenciar maiúsculas/minúsculas ou acentos; quando não houver correspondências, a tela informa que nenhum pagamento foi encontrado.
 - Na tela de cadastro/edição de aluno entram três campos: valor da mensalidade (reais), dia de vencimento (1 a 28) e aluno ativo (sim/não).
 
 ## Textos e formatos
@@ -49,6 +53,8 @@ Quinta aba do app. O instrutor abre e responde, de cima para baixo: "Como estou 
 - [ ] Trocar de mês atualiza cartões, barra, gráfico e lista; o mês seguinte ao atual não pode ser selecionado.
 - [ ] O gráfico mostra 6 meses em ordem cronológica, com legenda e valor ao tocar.
 - [ ] Marcar Pago e Desfazer funcionam e os números mudam imediatamente.
+- [ ] O histórico de pagamentos mostra nome, valor e data/hora, com os registros mais recentes primeiro.
+- [ ] Buscar por parte do nome do aluno filtra todos os pagamentos, sem diferenciar maiúsculas/minúsculas ou acentos, e informa quando não há resultados.
 - [ ] Cadastrar, editar e excluir despesa funcionam; excluir pede confirmação.
 - [ ] Os três novos campos do aluno podem ser salvos e editados; dia de vencimento fora de 1–28 é rejeitado.
 - [ ] Nenhum estado de atraso ou saldo depende só de cor.

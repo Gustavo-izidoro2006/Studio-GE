@@ -16,6 +16,7 @@ O instrutor precisa manter uma lista de alunos ativos na academia, com dados bá
 - Cadastrar novo aluno
 - Editar dados de um aluno existente
 - Excluir aluno
+- Informar data de nascimento em `DD/MM/AAAA`; a entrada avança automaticamente entre dia, mês e ano, e o app envia para a API como `AAAA-MM-DD`.
 
 ## Critérios de aceite
 - [ ] Não é possível salvar um aluno sem nome

@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.test import TestCase
 from django.utils import timezone
 
-from .models import Aluno, Despesa, Mensalidade
+from .models import Aluno, Despesa, Exercicio, ItemTreino, Mensalidade, Treino
 
 
 def mes_atual():
@@ -45,7 +45,8 @@ class FinanceiroAPITests(TestCase):
 		Despesa.objects.create(descricao='Luz', categoria='energia_agua', valor=Decimal('30.00'), data=mes_atual())
 		mensalidade = Mensalidade.objects.get()
 
-		self.client.post(f'/api/mensalidades/{mensalidade.id}/pagar/')
+		pagamento = self.client.post(f'/api/mensalidades/{mensalidade.id}/pagar/').json()
+		self.assertIsNotNone(pagamento['data_pagamento'])
 		resumo = self.client.get('/api/financeiro/resumo/').json()
 		self.assertEqual(resumo['recebido'], '100.10')
 		self.assertEqual(resumo['a_receber'], '0.00')
@@ -55,6 +56,29 @@ class FinanceiroAPITests(TestCase):
 		resumo = self.client.get('/api/financeiro/resumo/').json()
 		self.assertEqual(resumo['recebido'], '0.00')
 		self.assertEqual(resumo['a_receber'], '100.10')
+
+	def test_historico_lista_pagamentos_mais_recentes_primeiro(self):
+		outro = Aluno.objects.create(nome='Bia')
+		mais_antiga = Mensalidade.objects.create(
+			aluno=self.aluno, aluno_nome='Ana', competencia=mes_atual(),
+			valor=Decimal('100.10'), data_vencimento=mes_atual().replace(day=10),
+			data_pagamento=timezone.now() - timedelta(days=1),
+		)
+		mais_recente = Mensalidade.objects.create(
+			aluno=outro, aluno_nome='Bia', competencia=mes_atual(),
+			valor=Decimal('150.00'), data_vencimento=mes_atual().replace(day=10),
+			data_pagamento=timezone.now(),
+		)
+		Mensalidade.objects.create(
+			aluno=None, aluno_nome='Caio', competencia=mes_atual(),
+			valor=Decimal('75.00'), data_vencimento=mes_atual().replace(day=10),
+		)
+
+		resposta = self.client.get('/api/mensalidades/?pagas=true')
+
+		self.assertEqual(resposta.status_code, 200)
+		self.assertEqual([item['id'] for item in resposta.json()], [mais_recente.id, mais_antiga.id])
+		self.assertIn('T', resposta.json()[0]['data_pagamento'])
 
 	def test_mes_vazio_devolve_zeros(self):
 		resumo = self.client.get('/api/financeiro/resumo/?mes=2020-01').json()
@@ -122,3 +146,52 @@ class FinanceiroAPITests(TestCase):
 		Despesa.objects.create(descricao='B', categoria='outros', valor=Decimal('1'), data=date(2026, 10, 1))
 		lista = self.client.get('/api/despesas/?mes=2026-10').json()
 		self.assertEqual([d['descricao'] for d in lista], ['B'])
+
+
+class TreinoAPITests(TestCase):
+	def test_editar_treino_atualiza_dados_e_exercicios(self):
+		aluno = Aluno.objects.create(nome='Ana')
+		outro_aluno = Aluno.objects.create(nome='Bia')
+		agachamento = Exercicio.objects.create(nome='Agachamento')
+		supino = Exercicio.objects.create(nome='Supino')
+		treino = Treino.objects.create(aluno=aluno, nome='Treino A')
+		item = ItemTreino.objects.create(treino=treino, exercicio=agachamento, series=3)
+
+		resposta_treino = self.client.patch(
+			f'/api/treinos/{treino.id}/',
+			{'aluno': outro_aluno.id, 'nome': 'Treino B', 'observacoes': 'Foco em força'},
+			content_type='application/json',
+		)
+		resposta_item = self.client.patch(
+			f'/api/itens-treino/{item.id}/',
+			{'series': 4, 'repeticoes': 8},
+			content_type='application/json',
+		)
+		resposta_novo_item = self.client.post(
+			'/api/itens-treino/',
+			{'treino': treino.id, 'exercicio': supino.id, 'adaptacao': ''},
+			content_type='application/json',
+		)
+		self.assertEqual(resposta_treino.status_code, 200)
+		self.assertEqual(resposta_item.status_code, 200)
+		self.assertEqual(resposta_novo_item.status_code, 201)
+		treino.refresh_from_db()
+		item.refresh_from_db()
+		self.assertEqual((treino.aluno_id, treino.nome, treino.observacoes), (outro_aluno.id, 'Treino B', 'Foco em força'))
+		self.assertEqual((item.series, item.repeticoes), (4, 8))
+
+		resposta_remocao = self.client.delete(f'/api/itens-treino/{item.id}/')
+		self.assertEqual(resposta_remocao.status_code, 204)
+		self.assertEqual(Treino.objects.get(id=treino.id).itens.count(), 1)
+
+	def test_excluir_treino_remove_itens_vinculados(self):
+		aluno = Aluno.objects.create(nome='Ana')
+		exercicio = Exercicio.objects.create(nome='Agachamento')
+		treino = Treino.objects.create(aluno=aluno, nome='Treino A')
+		ItemTreino.objects.create(treino=treino, exercicio=exercicio)
+
+		resposta = self.client.delete(f'/api/treinos/{treino.id}/')
+
+		self.assertEqual(resposta.status_code, 204)
+		self.assertFalse(Treino.objects.filter(id=treino.id).exists())
+		self.assertFalse(ItemTreino.objects.filter(treino=treino).exists())

@@ -1,13 +1,13 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { FieldLabel } from '@/components/field-label';
 import { API_ROOT } from '@/constants/api';
 
 type Aluno = { id: number; nome: string };
 type Exercicio = { id: number; nome: string; grupo_muscular: string };
-type ItemForm = { exercicio: Exercicio; series: string; repeticoes: string; carga: string; adaptacao: string };
+type ItemForm = { id?: number; exercicio: Exercicio; series: string; repeticoes: string; carga: string; adaptacao: string };
 type Treino = { id: number; aluno: number; nome: string; observacoes: string };
 type ItemTreino = { id: number; treino: number; exercicio: number; series: number | null; repeticoes: number | null; carga: string | number | null; adaptacao: string };
 
@@ -16,6 +16,7 @@ const COLORS = { blue: '#185FA5', yellow: '#EF9F27', text: '#17212B', muted: '#6
 function items<T>(data: T[] | { results: T[] }) { return Array.isArray(data) ? data : data.results; }
 
 export default function TreinosScreen() {
+  const scrollRef = useRef<ScrollView>(null);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
   const [exercicios, setExercicios] = useState<Exercicio[]>([]);
   const [treinos, setTreinos] = useState<Treino[]>([]);
@@ -24,16 +25,24 @@ export default function TreinosScreen() {
   const [treinoNome, setTreinoNome] = useState('');
   const [observacoes, setObservacoes] = useState('');
   const [treinoItens, setTreinoItens] = useState<ItemForm[]>([]);
+  const [itensOriginais, setItensOriginais] = useState<ItemTreino[]>([]);
+  const [editingTreino, setEditingTreino] = useState<Treino | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [picker, setPicker] = useState<'aluno' | 'exercicio' | null>(null);
   const [creating, setCreating] = useState(false);
+  const [filtroVisible, setFiltroVisible] = useState(false);
+  const [filtroBusca, setFiltroBusca] = useState('');
+  const [alunoFiltradoId, setAlunoFiltradoId] = useState<number | null>(null);
 
   useEffect(() => { void loadOptions(); }, []);
 
-  async function loadOptions() {
-    setLoading(true); setError('');
+  async function loadOptions(pullToRefresh = false) {
+    if (pullToRefresh) setRefreshing(true);
+    else setLoading(true);
+    setError('');
     try {
       const [alunosResponse, exerciciosResponse, treinosResponse, itensResponse] = await Promise.all([
         fetch(`${API_ROOT}/alunos/`), fetch(`${API_ROOT}/exercicios/`), fetch(`${API_ROOT}/treinos/`), fetch(`${API_ROOT}/itens-treino/`),
@@ -44,13 +53,75 @@ export default function TreinosScreen() {
       const treinosData: Treino[] | { results: Treino[] } = await treinosResponse.json();
       const itensData: ItemTreino[] | { results: ItemTreino[] } = await itensResponse.json();
       setAlunos(items(alunosData)); setExercicios(items(exerciciosData)); setTreinos(items(treinosData)); setItensSalvos(items(itensData));
-    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : 'Erro ao carregar opções.'); }
-    finally { setLoading(false); }
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : 'Erro ao carregar opções.';
+      if (pullToRefresh) Alert.alert('Erro', message);
+      else setError(message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
+
+  async function excluirTreino(treino: Treino) {
+    try {
+      const response = await fetch(`${API_ROOT}/treinos/${treino.id}/`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Não foi possível excluir o treino.');
+      setTreinos((current) => current.filter((item) => item.id !== treino.id));
+      setItensSalvos((current) => current.filter((item) => item.treino !== treino.id));
+    } catch (requestError) {
+      Alert.alert('Erro', requestError instanceof Error ? requestError.message : 'Erro ao excluir treino.');
+    }
+  }
+
+  function confirmarExclusaoTreino(treino: Treino) {
+    Alert.alert('Excluir treino', `Deseja excluir "${treino.nome}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Excluir', style: 'destructive', onPress: () => void excluirTreino(treino) },
+    ]);
   }
 
   function addExercicio(exercicio: Exercicio) {
     setTreinoItens((current) => current.some((item) => item.exercicio.id === exercicio.id) ? current : [...current, { exercicio, series: '', repeticoes: '', carga: '', adaptacao: '' }]);
     setPicker(null);
+  }
+
+  function iniciarNovoTreino() {
+    setEditingTreino(null);
+    setAlunoId(null);
+    setTreinoNome('');
+    setObservacoes('');
+    setTreinoItens([]);
+    setItensOriginais([]);
+    setCreating(true);
+  }
+
+  function editarTreino(treino: Treino) {
+    const originais = itensSalvos.filter((item) => item.treino === treino.id);
+    const itens: ItemForm[] = [];
+    for (const item of originais) {
+      const exercicio = exercicios.find((disponivel) => disponivel.id === item.exercicio);
+      if (!exercicio) {
+        Alert.alert('Erro', 'Não foi possível carregar os exercícios deste treino.');
+        return;
+      }
+      itens.push({
+        id: item.id,
+        exercicio,
+        series: item.series === null ? '' : String(item.series),
+        repeticoes: item.repeticoes === null ? '' : String(item.repeticoes),
+        carga: item.carga === null ? '' : String(item.carga).replace('.', ','),
+        adaptacao: item.adaptacao,
+      });
+    }
+
+    setEditingTreino(treino);
+    setAlunoId(treino.aluno);
+    setTreinoNome(treino.nome);
+    setObservacoes(treino.observacoes ?? '');
+    setTreinoItens(itens);
+    setItensOriginais(originais);
+    setCreating(true);
   }
 
   function updateItem(index: number, field: keyof Omit<ItemForm, 'exercicio'>, value: string) {
@@ -62,31 +133,89 @@ export default function TreinosScreen() {
     if (!treinoNome.trim()) { Alert.alert('Nome obrigatório', 'Informe o nome do treino para continuar.'); return; }
     setSaving(true);
     try {
-      const treinoResponse = await fetch(`${API_ROOT}/treinos/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ aluno: alunoId, nome: treinoNome.trim(), observacoes: observacoes.trim() }) });
-      if (!treinoResponse.ok) throw new Error('Não foi possível salvar o treino.');
-      const treino: { id: number } = await treinoResponse.json();
+      const treinoResponse = await fetch(editingTreino ? `${API_ROOT}/treinos/${editingTreino.id}/` : `${API_ROOT}/treinos/`, {
+        method: editingTreino ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ aluno: alunoId, nome: treinoNome.trim(), observacoes: observacoes.trim() }),
+      });
+      if (!treinoResponse.ok) throw new Error(editingTreino ? 'Não foi possível atualizar o treino.' : 'Não foi possível salvar o treino.');
+      const treino: { id: number } = editingTreino ? editingTreino : await treinoResponse.json();
+      const itensMantidos = new Set<number>();
       for (const item of treinoItens) {
-        const itemResponse = await fetch(`${API_ROOT}/itens-treino/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ treino: treino.id, exercicio: item.exercicio.id, series: item.series ? Number(item.series) : null, repeticoes: item.repeticoes ? Number(item.repeticoes) : null, carga: item.carga || null, adaptacao: item.adaptacao.trim() }) });
-        if (!itemResponse.ok) throw new Error('O treino foi criado, mas não foi possível salvar todos os exercícios.');
+        const itemResponse = await fetch(item.id ? `${API_ROOT}/itens-treino/${item.id}/` : `${API_ROOT}/itens-treino/`, {
+          method: item.id ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ treino: treino.id, exercicio: item.exercicio.id, series: item.series ? Number(item.series) : null, repeticoes: item.repeticoes ? Number(item.repeticoes) : null, carga: item.carga ? item.carga.replace(',', '.') : null, adaptacao: item.adaptacao.trim() }),
+        });
+        if (!itemResponse.ok) throw new Error('O treino foi salvo, mas não foi possível salvar todos os exercícios.');
+        if (item.id) {
+          itensMantidos.add(item.id);
+        } else {
+          const itemSalvo: ItemTreino = await itemResponse.json();
+          itensMantidos.add(itemSalvo.id);
+          setTreinoItens((current) => current.map((atual) =>
+            atual.exercicio.id === item.exercicio.id ? { ...atual, id: itemSalvo.id } : atual,
+          ));
+          setItensOriginais((current) => [...current, itemSalvo]);
+        }
       }
-      Alert.alert('Treino salvo', 'O treino foi criado com sucesso.');
-      setTreinoNome(''); setObservacoes(''); setAlunoId(null); setTreinoItens([]); setCreating(false);
+      for (const original of itensOriginais) {
+        if (itensMantidos.has(original.id)) continue;
+        const resposta = await fetch(`${API_ROOT}/itens-treino/${original.id}/`, { method: 'DELETE' });
+        if (!resposta.ok) throw new Error('O treino foi salvo, mas não foi possível remover um exercício excluído.');
+        setItensOriginais((current) => current.filter((item) => item.id !== original.id));
+      }
+      Alert.alert(editingTreino ? 'Treino atualizado' : 'Treino salvo', editingTreino ? 'O treino foi atualizado com sucesso.' : 'O treino foi criado com sucesso.');
+      setTreinoNome(''); setObservacoes(''); setAlunoId(null); setTreinoItens([]); setItensOriginais([]); setEditingTreino(null); setCreating(false);
+      await loadOptions(true);
     } catch (requestError) { Alert.alert('Erro', requestError instanceof Error ? requestError.message : 'Erro ao salvar treino.'); }
     finally { setSaving(false); }
   }
 
   const selectedAluno = alunos.find((aluno) => aluno.id === alunoId);
+  const treinosFiltrados = alunoFiltradoId === null ? treinos : treinos.filter((treino) => treino.aluno === alunoFiltradoId);
+  const alunosComTreino = alunos
+    .filter((aluno) => treinos.some((treino) => treino.aluno === aluno.id))
+    .filter((aluno) => aluno.nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(filtroBusca.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()));
+  const nomeAlunoFiltrado = alunos.find((aluno) => aluno.id === alunoFiltradoId)?.nome;
   return <View style={styles.container}>
-    {loading ? <ActivityIndicator color={COLORS.blue} size="large" style={styles.loader} /> : error ? <View style={styles.state}><Text style={styles.stateTitle}>Não foi possível carregar</Text><Text style={styles.message}>{error}</Text><Pressable onPress={() => void loadOptions()} style={styles.retry}><Text style={styles.retryText}>Tentar novamente</Text></Pressable></View> : <ScrollView contentContainerStyle={styles.content}>
-      <View style={styles.savedHeader}><View><Text style={styles.sectionTitle}>Treinos salvos</Text><Text style={styles.sectionSubtitle}>Organizados por aluno</Text></View><Pressable accessibilityLabel="Atualizar treinos" onPress={() => void loadOptions()}><MaterialIcons name="refresh" size={22} color={COLORS.blue} /></Pressable></View>
+    {loading ? <ActivityIndicator color={COLORS.blue} size="large" style={styles.loader} /> : error ? <View style={styles.state}><Text style={styles.stateTitle}>Não foi possível carregar</Text><Text style={styles.message}>{error}</Text><Pressable onPress={() => void loadOptions()} style={styles.retry}><Text style={styles.retryText}>Tentar novamente</Text></Pressable></View> : <ScrollView
+      ref={scrollRef}
+      onContentSizeChange={() => { if (creating) scrollRef.current?.scrollToEnd({ animated: true }); }}
+      contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadOptions(true)} colors={[COLORS.blue]} tintColor={COLORS.blue} />}
+    >
+      <View style={styles.savedHeader}><View><Text style={styles.sectionTitle}>Treinos salvos</Text><Text style={styles.sectionSubtitle}>Organizados por aluno</Text></View></View>
+      <View style={styles.filterRow}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Filtrar treinos por aluno" onPress={() => { setFiltroBusca(''); setFiltroVisible(true); }} style={styles.filterButton}>
+          <MaterialIcons name="filter-list" size={21} color={COLORS.blue} />
+          <Text style={styles.filterButtonText}>{nomeAlunoFiltrado ?? 'Filtrar por aluno'}</Text>
+          <MaterialIcons name="expand-more" size={22} color={COLORS.blue} />
+        </Pressable>
+        {alunoFiltradoId !== null && <Pressable accessibilityRole="button" accessibilityLabel="Limpar filtro de aluno" onPress={() => setAlunoFiltradoId(null)} style={styles.clearFilter}><MaterialIcons name="close" size={20} color={COLORS.muted} /></Pressable>}
+      </View>
       {!treinos.length && <Text style={styles.emptyText}>Nenhum treino salvo ainda.</Text>}
-      {treinos.map((treino) => {
+      {!!treinos.length && !treinosFiltrados.length && <Text style={styles.emptyText}>Nenhum treino encontrado para esse aluno.</Text>}
+      {treinosFiltrados.map((treino) => {
         const aluno = alunos.find((item) => item.id === treino.aluno);
         const treinoExercicios = itensSalvos.filter((item) => item.treino === treino.id).map((item) => exercicios.find((exercicio) => exercicio.id === item.exercicio)?.nome).filter(Boolean);
-        return <View key={treino.id} style={styles.savedCard}><View style={styles.savedTitleRow}><MaterialIcons name="event-note" size={21} color={COLORS.blue} /><Text style={styles.savedName}>{treino.nome}</Text></View><Text style={styles.savedStudent}>{aluno?.nome ?? `Aluno #${treino.aluno}`}</Text><Text style={styles.savedExercises}>{treinoExercicios.length ? treinoExercicios.join(' · ') : 'Nenhum exercício adicionado'}</Text></View>;
+        return <View key={treino.id} style={styles.savedCard}>
+          <View style={styles.savedTitleRow}>
+            <MaterialIcons name="event-note" size={21} color={COLORS.blue} />
+            <Text style={styles.savedName}>{treino.nome}</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Editar treino ${treino.nome}`} onPress={() => editarTreino(treino)} style={styles.editWorkout}>
+              <MaterialIcons name="edit" size={21} color={COLORS.blue} />
+            </Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Excluir treino ${treino.nome}`} onPress={() => confirmarExclusaoTreino(treino)} style={styles.deleteWorkout}>
+              <MaterialIcons name="delete-outline" size={22} color={COLORS.danger} />
+            </Pressable>
+          </View>
+          <Text style={styles.savedStudent}>{aluno?.nome ?? `Aluno #${treino.aluno}`}</Text>
+          <Text style={styles.savedExercises}>{treinoExercicios.length ? treinoExercicios.join(' · ') : 'Nenhum exercício adicionado'}</Text>
+        </View>;
       })}
-      {!creating ? <Pressable accessibilityRole="button" onPress={() => setCreating(true)} style={styles.newWorkoutButton}><MaterialIcons name="add" size={20} color={COLORS.white} /><Text style={styles.newWorkoutText}>Novo treino</Text></Pressable> : <>
-      <View style={styles.newWorkoutHeader}><Text style={styles.sectionTitle}>Novo treino</Text><Pressable onPress={() => setCreating(false)}><Text style={styles.cancelText}>Cancelar</Text></Pressable></View>
+      {!creating ? <Pressable accessibilityRole="button" onPress={iniciarNovoTreino} style={styles.newWorkoutButton}><MaterialIcons name="add" size={20} color={COLORS.white} /><Text style={styles.newWorkoutText}>Novo treino</Text></Pressable> : <>
+      <View style={styles.newWorkoutHeader}><Text style={styles.sectionTitle}>{editingTreino ? 'Editar treino' : 'Novo treino'}</Text><Pressable onPress={() => { setCreating(false); setEditingTreino(null); }}><Text style={styles.cancelText}>Cancelar</Text></Pressable></View>
       <FieldLabel required style={styles.label}>Aluno</FieldLabel>
       <Pressable onPress={() => setPicker('aluno')} style={styles.select}><Text style={selectedAluno ? styles.selectText : styles.placeholder}>{selectedAluno?.nome ?? 'Selecione um aluno'}</Text><MaterialIcons name="expand-more" size={24} color={COLORS.muted} /></Pressable>
       <FieldLabel required style={styles.label}>Nome do treino</FieldLabel><TextInput value={treinoNome} onChangeText={setTreinoNome} placeholder="Ex.: Treino A" placeholderTextColor="#9AA4AD" style={styles.input} />
@@ -98,13 +227,56 @@ export default function TreinosScreen() {
         <Text style={styles.smallLabel}>Adaptação</Text><TextInput value={item.adaptacao} onChangeText={(value) => updateItem(index, 'adaptacao', value)} placeholder="Opcional" placeholderTextColor="#9AA4AD" style={styles.input} />
       </View>)}
       {!treinoItens.length && <Text style={styles.emptyText}>Nenhum exercício adicionado. O treino pode ser salvo sem exercícios.</Text>}
-      <Pressable disabled={saving} onPress={() => void saveTreino()} style={styles.save}>{saving ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.saveText}>Salvar treino</Text>}</Pressable>
+      <Pressable disabled={saving} onPress={() => void saveTreino()} style={styles.save}>{saving ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.saveText}>{editingTreino ? 'Salvar alterações' : 'Salvar treino'}</Text>}</Pressable>
       </>}
     </ScrollView>}
+    <Modal transparent visible={filtroVisible} animationType="slide" onRequestClose={() => setFiltroVisible(false)}>
+      <View style={styles.filterBackdrop}>
+        <View style={styles.picker}>
+          <View style={styles.filterHeader}>
+            <Text style={styles.pickerTitle}>Filtrar treinos por aluno</Text>
+            <Pressable accessibilityLabel="Fechar filtro" onPress={() => setFiltroVisible(false)} style={styles.closeFilter}>
+              <MaterialIcons name="close" size={24} color={COLORS.muted} />
+            </Pressable>
+          </View>
+          <TextInput
+            accessibilityLabel="Buscar aluno"
+            autoCapitalize="none"
+            onChangeText={setFiltroBusca}
+            placeholder="Buscar aluno pelo nome"
+            placeholderTextColor="#9AA4AD"
+            style={styles.filterSearch}
+            value={filtroBusca}
+          />
+          <FlatList
+            data={alunosComTreino}
+            keyExtractor={(aluno) => String(aluno.id)}
+            ListHeaderComponent={<Pressable style={styles.option} onPress={() => { setAlunoFiltradoId(null); setFiltroVisible(false); }}><Text style={styles.optionText}>Todos os alunos</Text></Pressable>}
+            ListEmptyComponent={<Text style={styles.emptyText}>Nenhum aluno encontrado.</Text>}
+            renderItem={({ item }) => (
+              <Pressable style={styles.option} onPress={() => { setAlunoFiltradoId(item.id); setFiltroVisible(false); }}>
+                <Text style={styles.optionText}>{item.nome}</Text>
+                <Text style={styles.optionMeta}>{treinos.filter((treino) => treino.aluno === item.id).length} {treinos.filter((treino) => treino.aluno === item.id).length === 1 ? 'treino' : 'treinos'}</Text>
+              </Pressable>
+            )}
+          />
+        </View>
+      </View>
+    </Modal>
     <Modal transparent visible={picker !== null} animationType="fade" onRequestClose={() => setPicker(null)}><Pressable style={styles.modalBackdrop} onPress={() => setPicker(null)}><View style={styles.picker}><Text style={styles.pickerTitle}>{picker === 'aluno' ? 'Selecionar aluno' : 'Adicionar exercício'}</Text><FlatList data={picker === 'aluno' ? alunos : exercicios.filter((item) => !treinoItens.some((selected) => selected.exercicio.id === item.id))} keyExtractor={(item) => String(item.id)} renderItem={({ item }) => <Pressable style={styles.option} onPress={() => picker === 'aluno' ? (setAlunoId(item.id), setPicker(null)) : addExercicio(item as Exercicio)}><Text style={styles.optionText}>{item.nome}</Text>{'grupo_muscular' in item && <Text style={styles.optionMeta}>{(item as Exercicio).grupo_muscular || 'Grupo muscular não informado'}</Text>}</Pressable>} ListEmptyComponent={<Text style={styles.emptyText}>Nenhuma opção disponível.</Text>} /></View></Pressable></Modal>
   </View>;
 }
 
 const styles = StyleSheet.create({
+  clearFilter: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
+  deleteWorkout: { alignItems: 'center', height: 44, justifyContent: 'center', marginLeft: 8, width: 44 },
+  editWorkout: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
+  filterBackdrop: { backgroundColor: 'rgba(23, 33, 43, 0.4)', flex: 1, justifyContent: 'flex-end', padding: 16 },
+  filterButton: { alignItems: 'center', backgroundColor: COLORS.white, borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, flex: 1, flexDirection: 'row', minHeight: 48, paddingHorizontal: 12 },
+  filterButtonText: { color: COLORS.text, flex: 1, fontSize: 15, marginLeft: 8 },
+  filterHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  filterRow: { alignItems: 'center', flexDirection: 'row', gap: 8, marginBottom: 14 },
+  filterSearch: { backgroundColor: COLORS.background, borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, color: COLORS.text, fontSize: 16, height: 48, marginBottom: 8, paddingHorizontal: 12 },
+  closeFilter: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   addExercise: { alignItems: 'center', flexDirection: 'row', gap: 3 }, addText: { color: COLORS.blue, fontWeight: '700' }, cancelText: { color: COLORS.muted, fontSize: 14, fontWeight: '700' }, container: { backgroundColor: COLORS.background, flex: 1 }, content: { padding: 20, paddingBottom: 40 }, emptyList: { paddingVertical: 12 }, emptyText: { color: COLORS.muted, fontSize: 14, lineHeight: 20, paddingVertical: 12 }, exerciseHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12, marginTop: 18 }, input: { borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, color: COLORS.text, fontSize: 16, height: 48, marginBottom: 16, paddingHorizontal: 14 }, itemCard: { backgroundColor: COLORS.white, borderRadius: 10, marginBottom: 12, padding: 14 }, itemHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 }, itemTitle: { color: COLORS.text, fontSize: 16, fontWeight: '700', marginLeft: 8 }, itemTitleWrap: { alignItems: 'center', flexDirection: 'row' }, label: { color: COLORS.text, fontSize: 14, fontWeight: '600', marginBottom: 7 }, loader: { flex: 1 }, message: { color: COLORS.muted, fontSize: 15, marginTop: 8, textAlign: 'center' }, modalBackdrop: { alignItems: 'center', backgroundColor: 'rgba(23, 33, 43, 0.4)', flex: 1, justifyContent: 'center', padding: 24 }, newWorkoutButton: { alignItems: 'center', backgroundColor: COLORS.blue, borderRadius: 8, flexDirection: 'row', justifyContent: 'center', marginTop: 24, paddingVertical: 13 }, newWorkoutHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: 24 }, numberField: { flex: 1, marginRight: 8 }, numberFields: { flexDirection: 'row', marginBottom: 10 }, option: { borderBottomColor: COLORS.border, borderBottomWidth: 1, paddingVertical: 14 }, optionMeta: { color: COLORS.muted, fontSize: 13, marginTop: 3 }, optionText: { color: COLORS.text, fontSize: 16, fontWeight: '600' }, picker: { backgroundColor: COLORS.white, borderRadius: 12, maxHeight: '75%', padding: 20, width: '100%' }, pickerTitle: { color: COLORS.text, fontSize: 20, fontWeight: '700', marginBottom: 12 }, placeholder: { color: '#9AA4AD', flex: 1, fontSize: 16 }, retry: { backgroundColor: COLORS.blue, borderRadius: 8, marginTop: 18, paddingHorizontal: 18, paddingVertical: 12 }, retryText: { color: COLORS.white, fontWeight: '700' }, save: { alignItems: 'center', backgroundColor: COLORS.blue, borderRadius: 8, height: 50, justifyContent: 'center', marginTop: 12 }, newWorkoutText: { color: COLORS.white, fontSize: 16, fontWeight: '700', marginLeft: 6 }, saveText: { color: COLORS.white, fontSize: 16, fontWeight: '700' }, savedCard: { backgroundColor: COLORS.white, borderRadius: 10, marginBottom: 10, padding: 14 }, savedExercises: { color: COLORS.muted, fontSize: 13, marginTop: 8 }, savedHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }, savedName: { color: COLORS.text, flex: 1, fontSize: 16, fontWeight: '700', marginLeft: 8 }, savedStudent: { color: COLORS.blue, fontSize: 14, fontWeight: '600', marginTop: 8 }, savedTitleRow: { alignItems: 'center', flexDirection: 'row' }, sectionSubtitle: { color: COLORS.muted, fontSize: 13, marginTop: 3 }, sectionTitle: { color: COLORS.text, fontSize: 18, fontWeight: '700' }, select: { alignItems: 'center', backgroundColor: COLORS.white, borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, flexDirection: 'row', height: 48, marginBottom: 16, paddingHorizontal: 14 }, selectText: { color: COLORS.text, flex: 1, fontSize: 16 }, smallInput: { backgroundColor: COLORS.white, borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, color: COLORS.text, fontSize: 16, height: 44, paddingHorizontal: 10 }, smallLabel: { color: COLORS.text, fontSize: 13, fontWeight: '600', marginBottom: 6 }, state: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 30 }, stateTitle: { color: COLORS.text, fontSize: 19, fontWeight: '700', textAlign: 'center' }, textarea: { height: 82, paddingTop: 12, textAlignVertical: 'top' },
 });

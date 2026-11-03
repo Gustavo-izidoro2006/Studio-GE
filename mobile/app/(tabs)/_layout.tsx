@@ -1,7 +1,7 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -18,11 +18,14 @@ const COLORS = {
   inactive: '#7A828A',
 };
 
-function TabIcon({ name, focused }: { name: React.ComponentProps<typeof MaterialIcons>['name']; focused: boolean }) {
+function TabIcon({ name, label, focused }: { name: React.ComponentProps<typeof MaterialIcons>['name']; label: string; focused: boolean }) {
   return (
-    <View style={styles.iconSlot}>
+    <View style={styles.tabItem}>
       <MaterialIcons name={name} size={24} color={focused ? COLORS.active : COLORS.inactive} />
-      {focused && <View style={styles.activeIndicator} />}
+      <View style={styles.tabLabelContainer}>
+        <Text style={[styles.tabLabel, { color: focused ? COLORS.active : COLORS.inactive }]}>{label}</Text>
+        {focused && <View style={styles.activeIndicator} />}
+      </View>
     </View>
   );
 }
@@ -49,14 +52,15 @@ export default function TabLayout() {
         tabBarActiveTintColor: COLORS.active,
         tabBarInactiveTintColor: COLORS.inactive,
         tabBarStyle: [styles.tabBar, { height: TAB_BAR_HEIGHT + insets.bottom, paddingBottom: TAB_BAR_PADDING_BOTTOM + insets.bottom }],
-        tabBarLabelStyle: styles.tabLabel,
+        tabBarShowLabel: false,
         tabBarButton: HapticTab,
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Alunos',
-          tabBarIcon: ({ focused }) => <TabIcon name="people" focused={focused} />,
+          tabBarAccessibilityLabel: 'Alunos',
+          tabBarIcon: ({ focused }) => <TabIcon name="people" label="Alunos" focused={focused} />,
           headerLeft: () => <HeaderIcon name="menu" />,
           headerRight: () => <HeaderIcon name="add" />,
         }}
@@ -65,7 +69,8 @@ export default function TabLayout() {
         name="exercicios"
         options={{
           title: 'Exercícios',
-          tabBarIcon: ({ focused }) => <TabIcon name="fitness-center" focused={focused} />,
+          tabBarAccessibilityLabel: 'Exercícios',
+          tabBarIcon: ({ focused }) => <TabIcon name="fitness-center" label="Exercícios" focused={focused} />,
           headerLeft: () => <HeaderIcon name="menu" />,
           headerRight: () => <HeaderIcon name="add" />,
         }}
@@ -74,7 +79,8 @@ export default function TabLayout() {
         name="treinos"
         options={{
           title: 'Treinos',
-          tabBarIcon: ({ focused }) => <TabIcon name="event-note" focused={focused} />,
+          tabBarAccessibilityLabel: 'Treinos',
+          tabBarIcon: ({ focused }) => <TabIcon name="event-note" label="Treinos" focused={focused} />,
           headerLeft: () => <HeaderIcon name="menu" />,
           headerRight: () => <HeaderIcon name="add" />,
         }}
@@ -83,7 +89,8 @@ export default function TabLayout() {
         name="financeiro"
         options={{
           title: 'Financeiro',
-          tabBarIcon: ({ focused }) => <TabIcon name="attach-money" focused={focused} />,
+          tabBarAccessibilityLabel: 'Financeiro',
+          tabBarIcon: ({ focused }) => <TabIcon name="attach-money" label="Financeiro" focused={focused} />,
           headerLeft: () => <HeaderIcon name="menu" />,
         }}
       />
@@ -91,7 +98,8 @@ export default function TabLayout() {
         name="perfil"
         options={{
           title: 'Perfil',
-          tabBarIcon: ({ focused }) => <TabIcon name="person" focused={focused} />,
+          tabBarAccessibilityLabel: 'Perfil',
+          tabBarIcon: ({ focused }) => <TabIcon name="person" label="Perfil" focused={focused} />,
           headerLeft: () => <HeaderIcon name="menu" />,
           headerRight: () => <HeaderIcon name="edit" />,
         }}
@@ -103,11 +111,8 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   activeIndicator: {
     backgroundColor: COLORS.accent,
-    bottom: -8,
     height: 3,
-    left: 0,
-    position: 'absolute',
-    right: 0,
+    marginTop: 3,
   },
   header: {
     backgroundColor: COLORS.background,
@@ -123,12 +128,15 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
-  iconSlot: {
+  tabItem: {
     alignItems: 'center',
-    height: 32,
+    flex: 1,
     justifyContent: 'center',
-    position: 'relative',
-    width: 48,
+  },
+  tabLabelContainer: {
+    alignItems: 'stretch',
+    alignSelf: 'center',
+    marginTop: 2,
   },
   tabBar: {
     backgroundColor: COLORS.background,
@@ -139,5 +147,6 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 12,
     fontWeight: '600',
+    textAlign: 'center',
   },
 });

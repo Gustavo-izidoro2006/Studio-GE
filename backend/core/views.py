@@ -65,12 +65,14 @@ class MensalidadeViewSet(viewsets.ReadOnlyModelViewSet):
 		mes = self.request.query_params.get('mes')
 		if mes:
 			queryset = queryset.filter(competencia=ler_mes(mes))
+		if self.request.query_params.get('pagas') == 'true':
+			queryset = queryset.filter(data_pagamento__isnull=False).order_by('-data_pagamento', '-id')
 		return queryset
 
 	@action(detail=True, methods=['post'])
 	def pagar(self, request, pk=None):
 		mensalidade = self.get_object()
-		mensalidade.data_pagamento = timezone.localdate()
+		mensalidade.data_pagamento = timezone.now()
 		mensalidade.save(update_fields=['data_pagamento'])
 		return Response(self.get_serializer(mensalidade).data)
 
