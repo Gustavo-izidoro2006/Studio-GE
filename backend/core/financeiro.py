@@ -20,10 +20,11 @@ def somar_meses(competencia, delta):
 	return date(indice // 12, indice % 12 + 1, 1)
 
 
-def gerar_mensalidades_do_mes():
-	"""Cria as mensalidades do mês atual que faltam. Seguro para repetir."""
+def gerar_mensalidades_do_mes(perfil):
+	"""Cria as mensalidades do mês atual que faltam no perfil. Seguro para repetir."""
 	competencia = primeiro_dia(timezone.localdate().year, timezone.localdate().month)
 	alunos = Aluno.objects.filter(
+		perfil=perfil,
 		ativo=True,
 		valor_mensalidade__isnull=False,
 		dia_vencimento__isnull=False,
@@ -35,6 +36,7 @@ def gerar_mensalidades_do_mes():
 				aluno=aluno,
 				competencia=competencia,
 				defaults={
+					'perfil': perfil,
 					'aluno_nome': aluno.nome,
 					'valor': aluno.valor_mensalidade,
 					'data_vencimento': competencia.replace(day=aluno.dia_vencimento),
@@ -48,13 +50,13 @@ def _soma(queryset):
 	return queryset.aggregate(total=Sum('valor'))['total'] or ZERO
 
 
-def _total_despesas(competencia):
+def _total_despesas(competencia, perfil):
 	proximo = somar_meses(competencia, 1)
-	return _soma(Despesa.objects.filter(data__gte=competencia, data__lt=proximo))
+	return _soma(Despesa.objects.filter(perfil=perfil, data__gte=competencia, data__lt=proximo))
 
 
-def _total_recebido(competencia):
-	return _soma(Mensalidade.objects.filter(competencia=competencia, data_pagamento__isnull=False))
+def _total_recebido(competencia, perfil):
+	return _soma(Mensalidade.objects.filter(perfil=perfil, competencia=competencia, data_pagamento__isnull=False))
 
 
 def _razao(parte, total):
@@ -63,9 +65,9 @@ def _razao(parte, total):
 	return (Decimal(parte) / Decimal(total)).quantize(Decimal('0.0001'))
 
 
-def _pendencias(competencia):
+def _pendencias(competencia, perfil):
 	hoje = timezone.localdate()
-	nao_pagas = Mensalidade.objects.filter(data_pagamento__isnull=True)
+	nao_pagas = Mensalidade.objects.filter(perfil=perfil, data_pagamento__isnull=True)
 	do_mes = list(nao_pagas.filter(competencia=competencia))
 	atrasadas_anteriores = list(nao_pagas.filter(competencia__lt=competencia, data_vencimento__lt=hoje))
 	todas = do_mes + atrasadas_anteriores
@@ -74,11 +76,11 @@ def _pendencias(competencia):
 	return todas
 
 
-def resumo_do_mes(competencia):
-	mensalidades = Mensalidade.objects.filter(competencia=competencia)
+def resumo_do_mes(competencia, perfil):
+	mensalidades = Mensalidade.objects.filter(perfil=perfil, competencia=competencia)
 	previsto = _soma(mensalidades)
-	recebido = _total_recebido(competencia)
-	despesas = _total_despesas(competencia)
+	recebido = _total_recebido(competencia, perfil)
+	despesas = _total_despesas(competencia, perfil)
 	quantidade = mensalidades.count()
 	em_atraso = sum(1 for m in mensalidades if m.status == 'atrasado')
 
@@ -87,8 +89,8 @@ def resumo_do_mes(competencia):
 		mes = somar_meses(competencia, deslocamento)
 		serie.append({
 			'mes': mes.strftime('%Y-%m'),
-			'recebido': _total_recebido(mes),
-			'despesas': _total_despesas(mes),
+			'recebido': _total_recebido(mes, perfil),
+			'despesas': _total_despesas(mes, perfil),
 		})
 
 	return {
@@ -102,5 +104,5 @@ def resumo_do_mes(competencia):
 		'em_atraso': em_atraso,
 		'taxa_inadimplencia': _razao(em_atraso, quantidade),
 		'serie': serie,
-		'pendencias': _pendencias(competencia),
+		'pendencias': _pendencias(competencia, perfil),
 	}

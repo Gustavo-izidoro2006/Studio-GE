@@ -16,7 +16,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from core.financeiro import somar_meses
-from core.models import Aluno, Despesa, Exercicio, ItemTreino, Medida, Mensalidade, Treino
+from core.models import Aluno, Despesa, Exercicio, ItemTreino, Medida, Mensalidade, Perfil, Treino
 
 # nome, turno, nascimento, valor, dia de vencimento, mês de início (0 = atual, -5 = há 5 meses),
 # último mês cobrado (None = segue ativo), ativo
@@ -35,8 +35,24 @@ ALUNOS = [
 	('Gabriel Sampaio Rocha', 'manha', date(2003, 3, 3), '300.00', 3, -1, None, True),
 	('Sônia Maria Tavares', 'tarde', date(1955, 2, 28), None, None, 0, None, True),  # cortesia
 	('Ricardo Pires Neto', 'noite', date(1990, 12, 15), '300.00', 15, -5, -3, False),  # inativo
+	# Perfil Personal: atendimentos em outras academias ou em casa
+	('Renata Albuquerque', 'manha', date(1984, 6, 2), '520.00', 7, -3, None, True),
+	('Paulo Henrique Matos', 'noite', date(1971, 9, 14), '480.00', 12, -2, None, True),
+	('Sandra Queiroz', 'tarde', date(1960, 1, 25), '600.00', 18, -3, None, True),
+	# Perfil Pessoal: o próprio treino e o de um amigo (sem mensalidade)
+	('Treino próprio (instrutor)', 'noite', None, None, None, 0, None, True),
+	('Rafael Nunes (amigo)', 'noite', date(1995, 4, 9), None, None, 0, None, True),
 ]
 NOMES_DEMO = [linha[0] for linha in ALUNOS]
+
+# Perfil de cada aluno de demonstração (os não listados ficam em Academia)
+PERFIL_DO_ALUNO = {
+	'Renata Albuquerque': 'personal',
+	'Paulo Henrique Matos': 'personal',
+	'Sandra Queiroz': 'personal',
+	'Treino próprio (instrutor)': 'pessoal',
+	'Rafael Nunes (amigo)': 'pessoal',
+}
 
 # Mensalidades de meses anteriores que ficaram em aberto (aparecem como atrasadas)
 EM_ABERTO_MES_ANTERIOR = {'Marcos Vinícius Teles', 'Thiago Barros Leal'}
@@ -44,7 +60,7 @@ EM_ABERTO_MES_ANTERIOR = {'Marcos Vinícius Teles', 'Thiago Barros Leal'}
 ATRASADO_NO_MES_ATUAL = {'Camila Rezende Prado'}
 # No mês atual: quem pagou adiantado (antes do vencimento)
 PAGOU_ADIANTADO = {'Helena Duarte Campos', 'Rogério Mendes Lima', 'Beatriz Nogueira Costa',
-	'Juliana Moraes Pinto', 'Gabriel Sampaio Rocha'}
+	'Juliana Moraes Pinto', 'Gabriel Sampaio Rocha', 'Renata Albuquerque'}
 
 EXERCICIOS = [
 	('Agachamento livre', 'Pernas', 'Agachamento com barra ou peso corporal, descendo com a coluna neutra.'),
@@ -129,6 +145,35 @@ TREINOS = {
 			('Elevação lateral', 3, 15, '6.00', ''),
 		]),
 	],
+	'Renata Albuquerque': [
+		('Treino em casa — Full body', 'Atendimento em domicílio: halteres leves e peso corporal.', [
+			('Agachamento livre', 3, 15, None, 'Peso corporal; apoio na cadeira se precisar.'),
+			('Ponte de glúteos', 3, 15, None, ''),
+			('Desenvolvimento com halteres', 3, 12, '4.00', ''),
+			('Prancha abdominal', 3, 1, None, 'Segurar 30 segundos.'),
+		]),
+	],
+	'Sandra Queiroz': [
+		('Treino adaptado — Equilíbrio (60+)', 'Atendimento na academia do condomínio. Sempre com apoio por perto.', [
+			('Caminhada na esteira', 1, 12, None, 'Sem inclinação, 12 minutos.'),
+			('Leg press 45°', 2, 12, '25.00', 'Amplitude confortável.'),
+			('Elevação lateral', 2, 12, '1.00', ''),
+		]),
+	],
+	'Treino próprio (instrutor)': [
+		('Treino A — Força', 'Meu treino: progressão semanal de carga.', [
+			('Agachamento livre', 5, 5, '100.00', ''),
+			('Supino reto com halteres', 4, 8, '32.00', ''),
+			('Remada baixa', 4, 8, '70.00', ''),
+		]),
+	],
+	'Rafael Nunes (amigo)': [
+		('Treino iniciante', 'Treino de um amigo, duas vezes por semana.', [
+			('Leg press 45°', 3, 12, '60.00', ''),
+			('Puxada frontal', 3, 12, '35.00', ''),
+			('Prancha abdominal', 3, 1, None, 'Segurar 30 segundos.'),
+		]),
+	],
 	'Lucas Ferraz Andrade': [
 		('Treino iniciante — Adaptado (adolescente)', 'Foco em técnica e postura; cargas leves.', [
 			('Agachamento livre', 3, 12, None, 'Peso corporal; corrigir a postura.'),
@@ -153,6 +198,9 @@ MEDIDAS = {
 	'Gabriel Sampaio Rocha': (3, 21,
 		dict(peso=66.0, altura=1.76, braco=31.0, abdomen=76.0, torax=92.0, cintura=74.0, quadril=92.0, perna=52.0, suprailiaca=10.0, subescapular=11.0, panturrilha=35.0, triceps=9.0),
 		dict(peso=68.4, altura=1.76, braco=33.0, abdomen=77.0, torax=95.5, cintura=75.0, quadril=93.0, perna=54.0, suprailiaca=10.5, subescapular=11.5, panturrilha=36.0, triceps=9.5)),
+	'Renata Albuquerque': (3, 30,
+		dict(peso=71.0, altura=1.62, braco=29.0, abdomen=88.0, torax=93.0, cintura=82.0, quadril=101.0, perna=57.0, suprailiaca=22.0, subescapular=17.0, panturrilha=36.0, triceps=21.0),
+		dict(peso=69.6, altura=1.62, braco=28.5, abdomen=85.0, torax=92.0, cintura=79.5, quadril=99.5, perna=56.5, suprailiaca=20.0, subescapular=16.0, panturrilha=36.0, triceps=19.5)),
 	'Juliana Moraes Pinto': (4, 30,
 		dict(peso=63.5, altura=1.68, braco=27.0, abdomen=74.0, torax=88.0, cintura=70.0, quadril=96.0, perna=56.0, suprailiaca=18.0, subescapular=14.0, panturrilha=35.0, triceps=19.0),
 		dict(peso=61.8, altura=1.68, braco=27.0, abdomen=72.0, torax=88.0, cintura=68.0, quadril=95.0, perna=55.5, suprailiaca=16.0, subescapular=13.0, panturrilha=35.0, triceps=17.0)),
@@ -169,7 +217,12 @@ DESPESAS = [
 	('Manutenção de esteira', 'manutencao', 22, [None, '180.00', None, None, '320.00', None]),
 	('Compra de halteres e anilhas', 'equipamentos', 9, [None, None, '640.00', None, None, None]),
 ]
-DESCRICOES_DESPESAS = [linha[0] for linha in DESPESAS]
+DESPESAS_PERSONAL = [
+	('Transporte para atendimentos', 'outros', 6, [None, None, '110.00', '125.00', '118.00', '130.00']),
+	('Elásticos e acessórios', 'equipamentos', 15, [None, None, None, '180.00', None, None]),
+]
+DESPESAS_POR_PERFIL = {'academia': DESPESAS, 'personal': DESPESAS_PERSONAL}
+DESCRICOES_DESPESAS = [linha[0] for linhas in DESPESAS_POR_PERFIL.values() for linha in linhas]
 
 
 def _agora_em(dia, hora, minuto=0):
@@ -193,6 +246,9 @@ class Command(BaseCommand):
 		self.agora = timezone.now()
 		self.mes_atual = self.hoje.replace(day=1)
 		self.rng = random.Random(2026)
+		self.perfis = {}
+		for tipo, nome in Perfil.TIPO_CHOICES:
+			self.perfis[tipo], _ = Perfil.objects.get_or_create(tipo=tipo, defaults={'nome': nome})
 
 		alunos = self._criar_alunos()
 		exercicios = self._criar_exercicios()
@@ -217,6 +273,7 @@ class Command(BaseCommand):
 		alunos = {}
 		for indice, (nome, turno, nascimento, valor, dia, inicio, fim, ativo) in enumerate(ALUNOS, start=1):
 			alunos[nome] = Aluno.objects.create(
+				perfil=self.perfis[PERFIL_DO_ALUNO.get(nome, 'academia')],
 				nome=nome,
 				contato=f'(34) 90000-{indice:04d}',
 				data_nascimento=nascimento,
@@ -228,23 +285,26 @@ class Command(BaseCommand):
 		return alunos
 
 	def _criar_exercicios(self):
+		"""Cada perfil tem o próprio catálogo (specs/perfis.md); não duplica o que já existe."""
 		exercicios = {}
-		for nome, grupo, descricao in EXERCICIOS:
-			exercicio = Exercicio.objects.filter(nome=nome).first()
-			if exercicio is None:
-				exercicio = Exercicio.objects.create(nome=nome, grupo_muscular=grupo, descricao=descricao)
-			exercicios[nome] = exercicio
+		for tipo, perfil in self.perfis.items():
+			for nome, grupo, descricao in EXERCICIOS:
+				exercicio = Exercicio.objects.filter(nome=nome, perfil=perfil).first()
+				if exercicio is None:
+					exercicio = Exercicio.objects.create(nome=nome, grupo_muscular=grupo, descricao=descricao, perfil=perfil)
+				exercicios[(tipo, nome)] = exercicio
 		return exercicios
 
 	# ---------- treinos ----------
 	def _criar_treinos(self, alunos, exercicios):
 		total = 0
 		for nome_aluno, lista in TREINOS.items():
+			tipo = PERFIL_DO_ALUNO.get(nome_aluno, 'academia')
 			for nome_treino, observacoes, itens in lista:
 				treino = Treino.objects.create(aluno=alunos[nome_aluno], nome=nome_treino, observacoes=observacoes)
 				for exercicio, series, repeticoes, carga, adaptacao in itens:
 					ItemTreino.objects.create(
-						treino=treino, exercicio=exercicios[exercicio], series=series,
+						treino=treino, exercicio=exercicios[(tipo, exercicio)], series=series,
 						repeticoes=repeticoes, carga=Decimal(carga) if carga else None, adaptacao=adaptacao)
 				total += 1
 		return total
@@ -305,14 +365,15 @@ class Command(BaseCommand):
 
 	def _criar_despesas(self):
 		total = 0
-		for descricao, categoria, dia, valores in DESPESAS:
-			for posicao, valor in enumerate(valores):
-				if valor is None:
-					continue
-				data = somar_meses(self.mes_atual, posicao - 5).replace(day=dia)
-				if data > self.hoje:
-					continue  # nada no futuro
-				Despesa.objects.create(descricao=descricao, categoria=categoria, valor=Decimal(valor), data=data)
-				total += 1
+		for tipo, despesas in DESPESAS_POR_PERFIL.items():
+			for descricao, categoria, dia, valores in despesas:
+				for posicao, valor in enumerate(valores):
+					if valor is None:
+						continue
+					data = somar_meses(self.mes_atual, posicao - 5).replace(day=dia)
+					if data > self.hoje:
+						continue  # nada no futuro
+					Despesa.objects.create(descricao=descricao, categoria=categoria, valor=Decimal(valor), data=data, perfil=self.perfis[tipo])
+					total += 1
 		return total
 

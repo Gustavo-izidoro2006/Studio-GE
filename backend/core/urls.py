@@ -8,6 +8,7 @@ from .views import (
 	ItemTreinoViewSet,
 	MedidaViewSet,
 	MensalidadeViewSet,
+	PerfilViewSet,
 	TreinoViewSet,
 	gerar_mensalidades,
 	resumo_financeiro,
@@ -15,6 +16,7 @@ from .views import (
 
 
 router = DefaultRouter()
+router.register('perfis', PerfilViewSet)
 router.register('alunos', AlunoViewSet)
 router.register('medidas', MedidaViewSet)
 router.register('exercicios', ExercicioViewSet)

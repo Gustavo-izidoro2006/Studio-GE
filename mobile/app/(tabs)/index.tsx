@@ -18,10 +18,17 @@ import {
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Avatar } from '@/components/avatar';
+import { Fab } from '@/components/fab';
 import { FieldLabel } from '@/components/field-label';
+import { StaggerItem } from '@/components/motion';
+import { PressableScale } from '@/components/pressable-scale';
+import { TURNO_TAG, Tag } from '@/components/tag';
 import { DateInput } from '@/components/date-input';
-import { API_ROOT } from '@/constants/api';
+import { API_ROOT, comPerfil } from '@/constants/api';
+import { usePerfil } from '@/contexts/perfil';
 import { converterDataParaISO, formatarDataParaEntrada } from '@/utils/date';
+import { COLORS } from '@/constants/ui';
 
 type Turno = 'manha' | 'tarde' | 'noite';
 type TurnoFilter = 'todos' | Turno;
@@ -47,7 +54,6 @@ type AlunoForm = {
 };
 
 const API_URL = `${API_ROOT}/alunos/`;
-const COLORS = { blue: '#185FA5', yellow: '#EF9F27', text: '#17212B', muted: '#6B7680', border: '#D9E0E6', background: '#F7F9FB', white: '#FFFFFF', danger: '#B42318' };
 const EMPTY_FORM: AlunoForm = {
   nome: '',
   contato: '',
@@ -79,18 +85,6 @@ function normalizeText(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
-function getTurnoLabel(turno: Turno | null) {
-  switch (turno) {
-    case 'manha':
-      return 'Manhã';
-    case 'tarde':
-      return 'Tarde';
-    case 'noite':
-      return 'Noite';
-    default:
-      return 'Turno não informado';
-  }
-}
 
 export default function AlunosScreen() {
   const insets = useSafeAreaInsets();
@@ -104,9 +98,13 @@ export default function AlunosScreen() {
   const [editingAluno, setEditingAluno] = useState<Aluno | null>(null);
   const [form, setForm] = useState<AlunoForm>(EMPTY_FORM);
 
+  const { perfilId } = usePerfil();
+
+  // Recarrega ao trocar de perfil (specs/perfis.md).
   useEffect(() => {
     void loadAlunos();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [perfilId]);
 
   const filteredAlunos = alunos.filter((aluno) => {
     const matchesSearch = !searchTerm || normalizeText(aluno.nome).includes(normalizeText(searchTerm));
@@ -118,7 +116,7 @@ export default function AlunosScreen() {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(API_URL);
+      const response = await fetch(comPerfil(API_URL, perfilId));
       if (!response.ok) throw new Error('Não foi possível carregar os alunos.');
       const data: Aluno[] = await response.json();
       setAlunos(data);
@@ -186,7 +184,7 @@ export default function AlunosScreen() {
 
     setSaving(true);
     try {
-      const response = await fetch(editingAluno ? `${API_URL}${editingAluno.id}/` : API_URL, {
+      const response = await fetch(editingAluno ? `${API_URL}${editingAluno.id}/` : comPerfil(API_URL, perfilId), {
         method: editingAluno ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -227,25 +225,35 @@ export default function AlunosScreen() {
     }
   }
 
-  function renderAluno({ item }: { item: Aluno }) {
-    const meta = [item.contato || formatDate(item.data_nascimento), getTurnoLabel(item.turno)].filter(Boolean).join(' • ');
+  function renderAluno({ item, index }: { item: Aluno; index: number }) {
+    const meta = item.contato || (item.data_nascimento ? formatDate(item.data_nascimento) : '');
+    const turno = item.turno ? TURNO_TAG[item.turno] : null;
 
     return (
-      <View style={styles.studentRow}>
-        <Pressable style={styles.studentInfo} onPress={() => router.push(`/aluno/${item.id}`)}>
-          <View style={styles.avatar}><Text style={styles.avatarText}>{item.nome.charAt(0).toUpperCase()}</Text></View>
+      <StaggerItem index={index} style={styles.studentRow}>
+        <PressableScale
+          accessibilityRole="button"
+          accessibilityLabel={`Abrir medidas de ${item.nome}${turno ? `, turno da ${turno.label.toLowerCase()}` : ''}${item.ativo ? '' : ', inativo'}`}
+          pressedScale={0.98}
+          style={styles.studentInfo}
+          onPress={() => router.push(`/aluno/${item.id}`)}>
+          <Avatar nome={item.nome} size={48} />
           <View style={styles.studentCopy}>
             <Text style={styles.studentName}>{item.nome}</Text>
-            <Text style={styles.studentMeta}>{meta}</Text>
+            {!!meta && <Text style={styles.studentMeta}>{meta}</Text>}
+            <View style={styles.studentTags}>
+              {turno && <Tag icon={turno.icon} label={turno.label} tone="blue" />}
+              {!item.ativo && <Tag icon="pause-circle-outline" label="Inativo" />}
+            </View>
           </View>
-        </Pressable>
-        <Pressable accessibilityLabel={`Editar ${item.nome}`} onPress={() => openEditModal(item)} style={styles.iconButton}>
+        </PressableScale>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Editar ${item.nome}`} onPress={() => openEditModal(item)} style={styles.iconButton}>
           <MaterialIcons name="edit" size={20} color={COLORS.blue} />
         </Pressable>
-        <Pressable accessibilityLabel={`Excluir ${item.nome}`} onPress={() => deleteAluno(item)} style={styles.iconButton}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Excluir ${item.nome}`} onPress={() => deleteAluno(item)} style={styles.iconButton}>
           <MaterialIcons name="delete-outline" size={22} color={COLORS.danger} />
         </Pressable>
-      </View>
+      </StaggerItem>
     );
   }
 
@@ -303,9 +311,7 @@ export default function AlunosScreen() {
           }
         />
       )}
-      <Pressable accessibilityLabel="Adicionar aluno" onPress={openCreateModal} style={styles.fab}>
-        <MaterialIcons name="add" size={28} color={COLORS.white} />
-      </Pressable>
+      <Fab accessibilityLabel="Adicionar aluno" onPress={openCreateModal} />
       <Modal animationType="slide" transparent visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <KeyboardAvoidingView behavior="padding" style={styles.modalBackdrop}>
           <ScrollView style={styles.modalScroll} contentContainerStyle={[styles.modalCard, { paddingBottom: 32 + insets.bottom }]} keyboardShouldPersistTaps="handled">
@@ -353,8 +359,7 @@ export default function AlunosScreen() {
 }
 
 const styles = StyleSheet.create({
-  avatar: { alignItems: 'center', backgroundColor: '#DCEAF7', borderRadius: 24, height: 48, justifyContent: 'center', width: 48 },
-  avatarText: { color: COLORS.blue, fontSize: 19, fontWeight: '700' },
+  studentTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
   container: { backgroundColor: COLORS.background, flex: 1 },
   emptyList: { flexGrow: 1, padding: 20 },
   fab: { alignItems: 'center', backgroundColor: COLORS.blue, borderRadius: 28, bottom: 22, elevation: 4, height: 56, justifyContent: 'center', position: 'absolute', right: 20, shadowColor: '#000', shadowOffset: { height: 2, width: 0 }, shadowOpacity: 0.2, shadowRadius: 4, width: 56 },

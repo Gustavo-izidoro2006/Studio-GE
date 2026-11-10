@@ -1,6 +1,21 @@
 from rest_framework import serializers
 
-from .models import Aluno, Despesa, Exercicio, ItemTreino, Medida, Mensalidade, Treino
+from .models import Aluno, Despesa, Exercicio, ItemTreino, Medida, Mensalidade, Perfil, Treino
+
+
+class PerfilSerializer(serializers.ModelSerializer):
+	total_alunos = serializers.IntegerField(read_only=True)
+
+	class Meta:
+		model = Perfil
+		fields = ['id', 'tipo', 'nome', 'total_alunos']
+		read_only_fields = ['tipo']
+
+	def validate_nome(self, value):
+		nome = value.strip()
+		if not nome:
+			raise serializers.ValidationError('Informe um nome para o perfil.')
+		return nome
 
 
 class AlunoSerializer(serializers.ModelSerializer):
@@ -34,6 +49,13 @@ class ItemTreinoSerializer(serializers.ModelSerializer):
 	class Meta:
 		model = ItemTreino
 		fields = '__all__'
+
+	def validate(self, attrs):
+		treino = attrs.get('treino') or getattr(self.instance, 'treino', None)
+		exercicio = attrs.get('exercicio') or getattr(self.instance, 'exercicio', None)
+		if treino and exercicio and treino.aluno.perfil_id != exercicio.perfil_id:
+			raise serializers.ValidationError({'exercicio': 'O exercício precisa ser do mesmo perfil do aluno.'})
+		return attrs
 
 
 class MensalidadeSerializer(serializers.ModelSerializer):

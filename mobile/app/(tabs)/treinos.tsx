@@ -1,9 +1,17 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Avatar } from '@/components/avatar';
+import { EmptyState } from '@/components/empty-state';
+import { FAB_SPACE, Fab } from '@/components/fab';
 import { FieldLabel } from '@/components/field-label';
-import { API_ROOT } from '@/constants/api';
+import { StaggerItem } from '@/components/motion';
+import { PressableScale } from '@/components/pressable-scale';
+import { API_ROOT, comPerfil } from '@/constants/api';
+import { usePerfil } from '@/contexts/perfil';
+import { COLORS } from '@/constants/ui';
 
 type Aluno = { id: number; nome: string };
 type Exercicio = { id: number; nome: string; grupo_muscular: string };
@@ -11,12 +19,11 @@ type ItemForm = { id?: number; exercicio: Exercicio; series: string; repeticoes:
 type Treino = { id: number; aluno: number; nome: string; observacoes: string };
 type ItemTreino = { id: number; treino: number; exercicio: number; series: number | null; repeticoes: number | null; carga: string | number | null; adaptacao: string };
 
-const COLORS = { blue: '#185FA5', yellow: '#EF9F27', text: '#17212B', muted: '#6B7680', border: '#D9E0E6', background: '#F7F9FB', white: '#FFFFFF', danger: '#B42318' };
 
 function items<T>(data: T[] | { results: T[] }) { return Array.isArray(data) ? data : data.results; }
 
 export default function TreinosScreen() {
-  const scrollRef = useRef<ScrollView>(null);
+  const insets = useSafeAreaInsets();
   const [alunos, setAlunos] = useState<Aluno[]>([]);
   const [exercicios, setExercicios] = useState<Exercicio[]>([]);
   const [treinos, setTreinos] = useState<Treino[]>([]);
@@ -36,8 +43,11 @@ export default function TreinosScreen() {
   const [filtroVisible, setFiltroVisible] = useState(false);
   const [filtroBusca, setFiltroBusca] = useState('');
   const [alunoFiltradoId, setAlunoFiltradoId] = useState<number | null>(null);
+  const [visualizando, setVisualizando] = useState<Treino | null>(null);
 
-  useEffect(() => { void loadOptions(); }, []);
+  const { perfilId } = usePerfil();
+  // Recarrega ao trocar de perfil; fecha painéis abertos do perfil anterior.
+  useEffect(() => { setVisualizando(null); setCreating(false); setAlunoFiltradoId(null); void loadOptions(); }, [perfilId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadOptions(pullToRefresh = false) {
     if (pullToRefresh) setRefreshing(true);
@@ -45,7 +55,7 @@ export default function TreinosScreen() {
     setError('');
     try {
       const [alunosResponse, exerciciosResponse, treinosResponse, itensResponse] = await Promise.all([
-        fetch(`${API_ROOT}/alunos/`), fetch(`${API_ROOT}/exercicios/`), fetch(`${API_ROOT}/treinos/`), fetch(`${API_ROOT}/itens-treino/`),
+        fetch(comPerfil(`${API_ROOT}/alunos/`, perfilId)), fetch(comPerfil(`${API_ROOT}/exercicios/`, perfilId)), fetch(comPerfil(`${API_ROOT}/treinos/`, perfilId)), fetch(comPerfil(`${API_ROOT}/itens-treino/`, perfilId)),
       ]);
       if (!alunosResponse.ok || !exerciciosResponse.ok || !treinosResponse.ok || !itensResponse.ok) throw new Error('Não foi possível carregar alunos, exercícios e treinos.');
       const alunosData: Aluno[] | { results: Aluno[] } = await alunosResponse.json();
@@ -176,60 +186,170 @@ export default function TreinosScreen() {
   const treinosFiltrados = alunoFiltradoId === null ? treinos : treinos.filter((treino) => treino.aluno === alunoFiltradoId);
   const alunosComTreino = alunos
     .filter((aluno) => treinos.some((treino) => treino.aluno === aluno.id))
-    .filter((aluno) => aluno.nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(filtroBusca.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()));
+    .filter((aluno) => aluno.nome.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().includes(filtroBusca.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()));
   const nomeAlunoFiltrado = alunos.find((aluno) => aluno.id === alunoFiltradoId)?.nome;
+  const itensDoTreino = (treinoId: number) => itensSalvos.filter((item) => item.treino === treinoId);
+  const nomeExercicio = (exercicioId: number) => exercicios.find((exercicio) => exercicio.id === exercicioId)?.nome ?? 'Exercício removido';
+  const alunoVisualizado = visualizando ? alunos.find((aluno) => aluno.id === visualizando.aluno) : undefined;
+
+  function fecharFormulario() {
+    setCreating(false);
+    setEditingTreino(null);
+    setPicker(null);
+  }
+
+  const pickerModal = (
+    <Modal transparent visible={picker !== null} animationType="fade" onRequestClose={() => setPicker(null)}>
+      <Pressable style={styles.modalBackdrop} onPress={() => setPicker(null)}>
+        <Pressable style={styles.picker} onPress={(event) => event.stopPropagation()}>
+          <Text style={styles.pickerTitle}>{picker === 'aluno' ? 'Selecionar aluno' : 'Adicionar exercício'}</Text>
+          <FlatList
+            data={picker === 'aluno' ? alunos : exercicios.filter((item) => !treinoItens.some((selected) => selected.exercicio.id === item.id))}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={({ item }) => (
+              <Pressable accessibilityRole="button" style={styles.option} onPress={() => picker === 'aluno' ? (setAlunoId(item.id), setPicker(null)) : addExercicio(item as Exercicio)}>
+                <Text style={styles.optionText}>{item.nome}</Text>
+                {'grupo_muscular' in item && <Text style={styles.optionMeta}>{(item as Exercicio).grupo_muscular || 'Grupo muscular não informado'}</Text>}
+              </Pressable>
+            )}
+            ListEmptyComponent={<Text style={styles.emptyText}>Nenhuma opção disponível.</Text>}
+          />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+
   return <View style={styles.container}>
-    {loading ? <ActivityIndicator color={COLORS.blue} size="large" style={styles.loader} /> : error ? <View style={styles.state}><Text style={styles.stateTitle}>Não foi possível carregar</Text><Text style={styles.message}>{error}</Text><Pressable onPress={() => void loadOptions()} style={styles.retry}><Text style={styles.retryText}>Tentar novamente</Text></Pressable></View> : <ScrollView
-      ref={scrollRef}
-      onContentSizeChange={() => { if (creating) scrollRef.current?.scrollToEnd({ animated: true }); }}
-      contentContainerStyle={styles.content}
+    {loading ? <ActivityIndicator color={COLORS.blue} size="large" style={styles.loader} /> : error ? <View style={styles.state}><Text style={styles.stateTitle}>Não foi possível carregar</Text><Text style={styles.message}>{error}</Text><Pressable accessibilityRole="button" onPress={() => void loadOptions()} style={styles.retry}><Text style={styles.retryText}>Tentar novamente</Text></Pressable></View> : <ScrollView
+      contentContainerStyle={[styles.content, { paddingBottom: FAB_SPACE }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadOptions(true)} colors={[COLORS.blue]} tintColor={COLORS.blue} />}
     >
-      <View style={styles.savedHeader}><View><Text style={styles.sectionTitle}>Treinos salvos</Text><Text style={styles.sectionSubtitle}>Organizados por aluno</Text></View></View>
-      <View style={styles.filterRow}>
+      <View style={styles.savedHeader}><View><Text style={styles.sectionTitle}>Treinos salvos</Text><Text style={styles.sectionSubtitle}>Toque em um treino para ver os exercícios</Text></View></View>
+      {!!treinos.length && <View style={styles.filterRow}>
         <Pressable accessibilityRole="button" accessibilityLabel="Filtrar treinos por aluno" onPress={() => { setFiltroBusca(''); setFiltroVisible(true); }} style={styles.filterButton}>
           <MaterialIcons name="filter-list" size={21} color={COLORS.blue} />
           <Text style={styles.filterButtonText}>{nomeAlunoFiltrado ?? 'Filtrar por aluno'}</Text>
           <MaterialIcons name="expand-more" size={22} color={COLORS.blue} />
         </Pressable>
         {alunoFiltradoId !== null && <Pressable accessibilityRole="button" accessibilityLabel="Limpar filtro de aluno" onPress={() => setAlunoFiltradoId(null)} style={styles.clearFilter}><MaterialIcons name="close" size={20} color={COLORS.muted} /></Pressable>}
-      </View>
-      {!treinos.length && <Text style={styles.emptyText}>Nenhum treino salvo ainda.</Text>}
+      </View>}
+      {!treinos.length && <EmptyState icon="event-note" title="Monte o primeiro treino" text="Escolha um aluno, adicione os exercícios e as adaptações que ele precisa." actionLabel="Novo treino" onAction={iniciarNovoTreino} />}
       {!!treinos.length && !treinosFiltrados.length && <Text style={styles.emptyText}>Nenhum treino encontrado para esse aluno.</Text>}
-      {treinosFiltrados.map((treino) => {
+      {treinosFiltrados.map((treino, index) => {
         const aluno = alunos.find((item) => item.id === treino.aluno);
-        const treinoExercicios = itensSalvos.filter((item) => item.treino === treino.id).map((item) => exercicios.find((exercicio) => exercicio.id === item.exercicio)?.nome).filter(Boolean);
-        return <View key={treino.id} style={styles.savedCard}>
-          <View style={styles.savedTitleRow}>
-            <MaterialIcons name="event-note" size={21} color={COLORS.blue} />
-            <Text style={styles.savedName}>{treino.nome}</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel={`Editar treino ${treino.nome}`} onPress={() => editarTreino(treino)} style={styles.editWorkout}>
-              <MaterialIcons name="edit" size={21} color={COLORS.blue} />
-            </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel={`Excluir treino ${treino.nome}`} onPress={() => confirmarExclusaoTreino(treino)} style={styles.deleteWorkout}>
-              <MaterialIcons name="delete-outline" size={22} color={COLORS.danger} />
+        const itens = itensDoTreino(treino.id);
+        const nomes = itens.map((item) => nomeExercicio(item.exercicio));
+        return <StaggerItem key={treino.id} index={index}>
+          <View style={styles.savedCard}>
+            {/* Área de ver o treino e botões de editar/excluir são irmãos (não aninhados): o leitor de tela alcança cada um. */}
+            <PressableScale
+              accessibilityRole="button"
+              accessibilityLabel={`Ver treino ${treino.nome}, de ${aluno?.nome ?? 'aluno'}, ${itens.length} exercícios`}
+              onPress={() => setVisualizando(treino)}
+              pressedScale={0.98}
+              style={styles.savedMain}>
+              <View style={styles.savedTitleRow}>
+                <MaterialIcons name="event-note" size={21} color={COLORS.blue} />
+                <Text style={styles.savedName}>{treino.nome}</Text>
+              </View>
+              <View style={styles.savedStudentRow}>
+                <Avatar nome={aluno?.nome ?? '?'} size={28} />
+                <Text style={styles.savedStudent}>{aluno?.nome ?? `Aluno #${treino.aluno}`}</Text>
+              </View>
+              <Text style={styles.savedCount}>{itens.length ? `${itens.length} exercício${itens.length === 1 ? '' : 's'}` : 'Nenhum exercício adicionado'}</Text>
+              {!!nomes.length && <Text style={styles.savedExercises}>{nomes.join(' · ')}</Text>}
+            </PressableScale>
+            <View style={styles.savedActions}>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Editar treino ${treino.nome}`} onPress={() => editarTreino(treino)} style={styles.editWorkout}>
+                <MaterialIcons name="edit" size={21} color={COLORS.blue} />
+              </Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Excluir treino ${treino.nome}`} onPress={() => confirmarExclusaoTreino(treino)} style={styles.deleteWorkout}>
+                <MaterialIcons name="delete-outline" size={22} color={COLORS.danger} />
+              </Pressable>
+            </View>
+          </View>
+        </StaggerItem>;
+      })}
+    </ScrollView>}
+    {!loading && !error && !!treinos.length && <Fab accessibilityLabel="Novo treino" onPress={iniciarNovoTreino} />}
+
+    {/* Visualização somente leitura, em letra maior (T4). */}
+    <Modal transparent visible={visualizando !== null} animationType="slide" onRequestClose={() => setVisualizando(null)}>
+      <View style={styles.sheetBackdrop}>
+        <View style={[styles.sheet, { paddingBottom: 24 + insets.bottom }]}>
+          <View style={styles.sheetHeader}>
+            <Text style={styles.viewTitle}>{visualizando?.nome}</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Fechar treino" onPress={() => setVisualizando(null)} style={styles.closeFilter}>
+              <MaterialIcons name="close" size={26} color={COLORS.muted} />
             </Pressable>
           </View>
-          <Text style={styles.savedStudent}>{aluno?.nome ?? `Aluno #${treino.aluno}`}</Text>
-          <Text style={styles.savedExercises}>{treinoExercicios.length ? treinoExercicios.join(' · ') : 'Nenhum exercício adicionado'}</Text>
-        </View>;
-      })}
-      {!creating ? <Pressable accessibilityRole="button" onPress={iniciarNovoTreino} style={styles.newWorkoutButton}><MaterialIcons name="add" size={20} color={COLORS.white} /><Text style={styles.newWorkoutText}>Novo treino</Text></Pressable> : <>
-      <View style={styles.newWorkoutHeader}><Text style={styles.sectionTitle}>{editingTreino ? 'Editar treino' : 'Novo treino'}</Text><Pressable onPress={() => { setCreating(false); setEditingTreino(null); }}><Text style={styles.cancelText}>Cancelar</Text></Pressable></View>
-      <FieldLabel required style={styles.label}>Aluno</FieldLabel>
-      <Pressable onPress={() => setPicker('aluno')} style={styles.select}><Text style={selectedAluno ? styles.selectText : styles.placeholder}>{selectedAluno?.nome ?? 'Selecione um aluno'}</Text><MaterialIcons name="expand-more" size={24} color={COLORS.muted} /></Pressable>
-      <FieldLabel required style={styles.label}>Nome do treino</FieldLabel><TextInput value={treinoNome} onChangeText={setTreinoNome} placeholder="Ex.: Treino A" placeholderTextColor="#9AA4AD" style={styles.input} />
-      <Text style={styles.label}>Observações</Text><TextInput multiline value={observacoes} onChangeText={setObservacoes} placeholder="Orientações gerais" placeholderTextColor="#9AA4AD" style={[styles.input, styles.textarea]} />
-      <View style={styles.exerciseHeading}><Text style={styles.sectionTitle}>Exercícios</Text><Pressable onPress={() => setPicker('exercicio')} style={styles.addExercise}><MaterialIcons name="add" size={18} color={COLORS.blue} /><Text style={styles.addText}>Adicionar</Text></Pressable></View>
-      {treinoItens.map((item, index) => <View key={item.exercicio.id} style={styles.itemCard}>
-        <View style={styles.itemHeader}><View style={styles.itemTitleWrap}><MaterialIcons name="fitness-center" size={21} color={COLORS.blue} /><Text style={styles.itemTitle}>{item.exercicio.nome}</Text></View><Pressable onPress={() => setTreinoItens((current) => current.filter((_, itemIndex) => itemIndex !== index))}><MaterialIcons name="delete-outline" size={21} color={COLORS.danger} /></Pressable></View>
-        <View style={styles.numberFields}><View style={styles.numberField}><Text style={styles.smallLabel}>Séries</Text><TextInput keyboardType="number-pad" value={item.series} onChangeText={(value) => updateItem(index, 'series', value)} style={styles.smallInput} /></View><View style={styles.numberField}><Text style={styles.smallLabel}>Repetições</Text><TextInput keyboardType="number-pad" value={item.repeticoes} onChangeText={(value) => updateItem(index, 'repeticoes', value)} style={styles.smallInput} /></View><View style={styles.numberField}><Text style={styles.smallLabel}>Carga (kg)</Text><TextInput keyboardType="decimal-pad" value={item.carga} onChangeText={(value) => updateItem(index, 'carga', value)} style={styles.smallInput} /></View></View>
-        <Text style={styles.smallLabel}>Adaptação</Text><TextInput value={item.adaptacao} onChangeText={(value) => updateItem(index, 'adaptacao', value)} placeholder="Opcional" placeholderTextColor="#9AA4AD" style={styles.input} />
-      </View>)}
-      {!treinoItens.length && <Text style={styles.emptyText}>Nenhum exercício adicionado. O treino pode ser salvo sem exercícios.</Text>}
-      <Pressable disabled={saving} onPress={() => void saveTreino()} style={styles.save}>{saving ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.saveText}>{editingTreino ? 'Salvar alterações' : 'Salvar treino'}</Text>}</Pressable>
-      </>}
-    </ScrollView>}
+          <View style={styles.viewStudentRow}>
+            <Avatar nome={alunoVisualizado?.nome ?? '?'} size={36} />
+            <Text style={styles.viewStudent}>{alunoVisualizado?.nome ?? ''}</Text>
+          </View>
+          <ScrollView style={styles.sheetScroll}>
+            {!!visualizando?.observacoes && <View style={styles.viewNotes}>
+              <MaterialIcons name="sticky-note-2" size={20} color={COLORS.blue} />
+              <Text style={styles.viewNotesText}>{visualizando.observacoes}</Text>
+            </View>}
+            {visualizando && itensDoTreino(visualizando.id).map((item, index) => {
+              const partes = [
+                item.series && item.repeticoes ? `${item.series} × ${item.repeticoes}` : item.series ? `${item.series} séries` : item.repeticoes ? `${item.repeticoes} repetições` : '',
+                item.carga !== null && item.carga !== '' ? `${String(item.carga).replace('.', ',').replace(/,00$/, '')} kg` : '',
+              ].filter(Boolean);
+              return <StaggerItem key={item.id} index={index}>
+                <View style={styles.viewItem}>
+                  <View style={styles.viewItemNumber}><Text style={styles.viewItemNumberText}>{index + 1}</Text></View>
+                  <View style={styles.viewItemBody}>
+                    <Text style={styles.viewItemName}>{nomeExercicio(item.exercicio)}</Text>
+                    {!!partes.length && <Text style={styles.viewItemDose}>{partes.join(' · ')}</Text>}
+                    {!!item.adaptacao && <View style={styles.viewAdaptation}>
+                      <MaterialIcons name="accessibility-new" size={18} color={COLORS.yellowText} />
+                      <Text style={styles.viewAdaptationText}><Text style={styles.viewAdaptationLabel}>Adaptação: </Text>{item.adaptacao}</Text>
+                    </View>}
+                  </View>
+                </View>
+              </StaggerItem>;
+            })}
+            {visualizando && !itensDoTreino(visualizando.id).length && <Text style={styles.emptyText}>Nenhum exercício adicionado neste treino.</Text>}
+          </ScrollView>
+          <Pressable accessibilityRole="button" onPress={() => { const treino = visualizando; setVisualizando(null); if (treino) editarTreino(treino); }} style={styles.editOutline}>
+            <MaterialIcons name="edit" size={20} color={COLORS.blue} />
+            <Text style={styles.editOutlineText}>Editar treino</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+
+    {/* Criar/editar em painel por cima da lista: a lista não sai do lugar (T3). */}
+    <Modal transparent visible={creating} animationType="slide" onRequestClose={fecharFormulario}>
+      <KeyboardAvoidingView behavior="padding" style={styles.sheetBackdrop}>
+        <View style={[styles.sheet, styles.sheetTall, { paddingBottom: 16 + insets.bottom }]}>
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>{editingTreino ? 'Editar treino' : 'Novo treino'}</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Fechar sem salvar" onPress={fecharFormulario} style={styles.closeFilter}>
+              <MaterialIcons name="close" size={26} color={COLORS.muted} />
+            </Pressable>
+          </View>
+          <ScrollView keyboardShouldPersistTaps="handled" style={styles.formScroll}>
+            <FieldLabel required style={styles.label}>Aluno</FieldLabel>
+            <Pressable accessibilityRole="button" accessibilityLabel={selectedAluno ? `Aluno: ${selectedAluno.nome}. Trocar` : 'Selecionar aluno'} onPress={() => setPicker('aluno')} style={styles.select}><Text style={selectedAluno ? styles.selectText : styles.placeholder}>{selectedAluno?.nome ?? 'Selecione um aluno'}</Text><MaterialIcons name="expand-more" size={24} color={COLORS.muted} /></Pressable>
+            <FieldLabel required style={styles.label}>Nome do treino</FieldLabel><TextInput value={treinoNome} onChangeText={setTreinoNome} placeholder="Ex.: Treino A" placeholderTextColor="#9AA4AD" style={styles.input} />
+            <Text style={styles.label}>Observações</Text><TextInput multiline value={observacoes} onChangeText={setObservacoes} placeholder="Orientações gerais" placeholderTextColor="#9AA4AD" style={[styles.input, styles.textarea]} />
+            <View style={styles.exerciseHeading}><Text style={styles.sectionTitle}>Exercícios</Text><Pressable accessibilityRole="button" onPress={() => setPicker('exercicio')} style={styles.addExercise}><MaterialIcons name="add" size={18} color={COLORS.blue} /><Text style={styles.addText}>Adicionar</Text></Pressable></View>
+            {treinoItens.map((item, index) => <View key={item.exercicio.id} style={styles.itemCard}>
+              <View style={styles.itemHeader}><View style={styles.itemTitleWrap}><MaterialIcons name="fitness-center" size={21} color={COLORS.blue} /><Text style={styles.itemTitle}>{item.exercicio.nome}</Text></View><Pressable accessibilityRole="button" accessibilityLabel={`Remover ${item.exercicio.nome}`} onPress={() => setTreinoItens((current) => current.filter((_, itemIndex) => itemIndex !== index))} style={styles.editWorkout}><MaterialIcons name="delete-outline" size={21} color={COLORS.danger} /></Pressable></View>
+              <View style={styles.numberFields}><View style={styles.numberField}><Text style={styles.smallLabel}>Séries</Text><TextInput keyboardType="number-pad" value={item.series} onChangeText={(value) => updateItem(index, 'series', value)} style={styles.smallInput} /></View><View style={styles.numberField}><Text style={styles.smallLabel}>Repetições</Text><TextInput keyboardType="number-pad" value={item.repeticoes} onChangeText={(value) => updateItem(index, 'repeticoes', value)} style={styles.smallInput} /></View><View style={styles.numberField}><Text style={styles.smallLabel}>Carga (kg)</Text><TextInput keyboardType="decimal-pad" value={item.carga} onChangeText={(value) => updateItem(index, 'carga', value)} style={styles.smallInput} /></View></View>
+              <Text style={styles.smallLabel}>Adaptação</Text><TextInput value={item.adaptacao} onChangeText={(value) => updateItem(index, 'adaptacao', value)} placeholder="Opcional" placeholderTextColor="#9AA4AD" style={styles.input} />
+            </View>)}
+            {!treinoItens.length && <Text style={styles.emptyText}>Nenhum exercício adicionado. O treino pode ser salvo sem exercícios.</Text>}
+          </ScrollView>
+          <Pressable accessibilityRole="button" disabled={saving} onPress={() => void saveTreino()} style={styles.save}>{saving ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.saveText}>{editingTreino ? 'Salvar alterações' : 'Salvar treino'}</Text>}</Pressable>
+        </View>
+      </KeyboardAvoidingView>
+      {pickerModal}
+    </Modal>
+
     <Modal transparent visible={filtroVisible} animationType="slide" onRequestClose={() => setFiltroVisible(false)}>
       <View style={styles.filterBackdrop}>
         <View style={styles.picker}>
@@ -263,11 +383,35 @@ export default function TreinosScreen() {
         </View>
       </View>
     </Modal>
-    <Modal transparent visible={picker !== null} animationType="fade" onRequestClose={() => setPicker(null)}><Pressable style={styles.modalBackdrop} onPress={() => setPicker(null)}><View style={styles.picker}><Text style={styles.pickerTitle}>{picker === 'aluno' ? 'Selecionar aluno' : 'Adicionar exercício'}</Text><FlatList data={picker === 'aluno' ? alunos : exercicios.filter((item) => !treinoItens.some((selected) => selected.exercicio.id === item.id))} keyExtractor={(item) => String(item.id)} renderItem={({ item }) => <Pressable style={styles.option} onPress={() => picker === 'aluno' ? (setAlunoId(item.id), setPicker(null)) : addExercicio(item as Exercicio)}><Text style={styles.optionText}>{item.nome}</Text>{'grupo_muscular' in item && <Text style={styles.optionMeta}>{(item as Exercicio).grupo_muscular || 'Grupo muscular não informado'}</Text>}</Pressable>} ListEmptyComponent={<Text style={styles.emptyText}>Nenhuma opção disponível.</Text>} /></View></Pressable></Modal>
   </View>;
 }
 
 const styles = StyleSheet.create({
+  editOutline: { alignItems: 'center', borderColor: COLORS.blue, borderRadius: 8, borderWidth: 1.5, flexDirection: 'row', gap: 6, justifyContent: 'center', marginTop: 12, minHeight: 48 },
+  editOutlineText: { color: COLORS.blue, fontSize: 16, fontWeight: '700' },
+  savedCount: { color: COLORS.text, fontSize: 14, fontWeight: '600', marginTop: 10 },
+  savedStudentRow: { alignItems: 'center', flexDirection: 'row', gap: 8, marginTop: 8 },
+  sheet: { backgroundColor: COLORS.white, borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: '90%', paddingHorizontal: 20, paddingTop: 16 },
+  sheetBackdrop: { backgroundColor: 'rgba(23, 33, 43, 0.4)', flex: 1, justifyContent: 'flex-end' },
+  sheetHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  formScroll: { flex: 1 },
+  sheetScroll: { flexGrow: 0 },
+  sheetTall: { height: '90%' },
+  sheetTitle: { color: COLORS.text, fontSize: 22, fontWeight: '700' },
+  viewAdaptation: { alignItems: 'flex-start', backgroundColor: COLORS.paleYellow, borderRadius: 8, flexDirection: 'row', gap: 6, marginTop: 8, padding: 10 },
+  viewAdaptationLabel: { fontWeight: '700' },
+  viewAdaptationText: { color: COLORS.yellowText, flex: 1, fontSize: 15, lineHeight: 21 },
+  viewItem: { borderBottomColor: COLORS.border, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: 12, paddingVertical: 14 },
+  viewItemBody: { flex: 1 },
+  viewItemDose: { color: COLORS.text, fontSize: 16, marginTop: 4 },
+  viewItemName: { color: COLORS.text, fontSize: 17, fontWeight: '700' },
+  viewItemNumber: { alignItems: 'center', backgroundColor: COLORS.blueLight, borderRadius: 14, height: 28, justifyContent: 'center', marginTop: 1, width: 28 },
+  viewItemNumberText: { color: COLORS.blueDark, fontSize: 14, fontWeight: '700' },
+  viewNotes: { alignItems: 'flex-start', backgroundColor: COLORS.blueLight, borderRadius: 8, flexDirection: 'row', gap: 8, marginBottom: 6, marginTop: 4, padding: 12 },
+  viewNotesText: { color: COLORS.blueDark, flex: 1, fontSize: 15, lineHeight: 21 },
+  viewStudent: { color: COLORS.blue, fontSize: 16, fontWeight: '600' },
+  viewStudentRow: { alignItems: 'center', flexDirection: 'row', gap: 10, marginBottom: 10 },
+  viewTitle: { color: COLORS.text, flex: 1, fontSize: 22, fontWeight: '700' },
   clearFilter: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   deleteWorkout: { alignItems: 'center', height: 44, justifyContent: 'center', marginLeft: 8, width: 44 },
   editWorkout: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
@@ -278,5 +422,5 @@ const styles = StyleSheet.create({
   filterRow: { alignItems: 'center', flexDirection: 'row', gap: 8, marginBottom: 14 },
   filterSearch: { backgroundColor: COLORS.background, borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, color: COLORS.text, fontSize: 16, height: 48, marginBottom: 8, paddingHorizontal: 12 },
   closeFilter: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
-  addExercise: { alignItems: 'center', flexDirection: 'row', gap: 3 }, addText: { color: COLORS.blue, fontWeight: '700' }, cancelText: { color: COLORS.muted, fontSize: 14, fontWeight: '700' }, container: { backgroundColor: COLORS.background, flex: 1 }, content: { padding: 20, paddingBottom: 40 }, emptyList: { paddingVertical: 12 }, emptyText: { color: COLORS.muted, fontSize: 14, lineHeight: 20, paddingVertical: 12 }, exerciseHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12, marginTop: 18 }, input: { borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, color: COLORS.text, fontSize: 16, height: 48, marginBottom: 16, paddingHorizontal: 14 }, itemCard: { backgroundColor: COLORS.white, borderRadius: 10, marginBottom: 12, padding: 14 }, itemHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 }, itemTitle: { color: COLORS.text, fontSize: 16, fontWeight: '700', marginLeft: 8 }, itemTitleWrap: { alignItems: 'center', flexDirection: 'row' }, label: { color: COLORS.text, fontSize: 14, fontWeight: '600', marginBottom: 7 }, loader: { flex: 1 }, message: { color: COLORS.muted, fontSize: 15, marginTop: 8, textAlign: 'center' }, modalBackdrop: { alignItems: 'center', backgroundColor: 'rgba(23, 33, 43, 0.4)', flex: 1, justifyContent: 'center', padding: 24 }, newWorkoutButton: { alignItems: 'center', backgroundColor: COLORS.blue, borderRadius: 8, flexDirection: 'row', justifyContent: 'center', marginTop: 24, paddingVertical: 13 }, newWorkoutHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: 24 }, numberField: { flex: 1, marginRight: 8 }, numberFields: { flexDirection: 'row', marginBottom: 10 }, option: { borderBottomColor: COLORS.border, borderBottomWidth: 1, paddingVertical: 14 }, optionMeta: { color: COLORS.muted, fontSize: 13, marginTop: 3 }, optionText: { color: COLORS.text, fontSize: 16, fontWeight: '600' }, picker: { backgroundColor: COLORS.white, borderRadius: 12, maxHeight: '75%', padding: 20, width: '100%' }, pickerTitle: { color: COLORS.text, fontSize: 20, fontWeight: '700', marginBottom: 12 }, placeholder: { color: '#9AA4AD', flex: 1, fontSize: 16 }, retry: { backgroundColor: COLORS.blue, borderRadius: 8, marginTop: 18, paddingHorizontal: 18, paddingVertical: 12 }, retryText: { color: COLORS.white, fontWeight: '700' }, save: { alignItems: 'center', backgroundColor: COLORS.blue, borderRadius: 8, height: 50, justifyContent: 'center', marginTop: 12 }, newWorkoutText: { color: COLORS.white, fontSize: 16, fontWeight: '700', marginLeft: 6 }, saveText: { color: COLORS.white, fontSize: 16, fontWeight: '700' }, savedCard: { backgroundColor: COLORS.white, borderRadius: 10, marginBottom: 10, padding: 14 }, savedExercises: { color: COLORS.muted, fontSize: 13, marginTop: 8 }, savedHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }, savedName: { color: COLORS.text, flex: 1, fontSize: 16, fontWeight: '700', marginLeft: 8 }, savedStudent: { color: COLORS.blue, fontSize: 14, fontWeight: '600', marginTop: 8 }, savedTitleRow: { alignItems: 'center', flexDirection: 'row' }, sectionSubtitle: { color: COLORS.muted, fontSize: 13, marginTop: 3 }, sectionTitle: { color: COLORS.text, fontSize: 18, fontWeight: '700' }, select: { alignItems: 'center', backgroundColor: COLORS.white, borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, flexDirection: 'row', height: 48, marginBottom: 16, paddingHorizontal: 14 }, selectText: { color: COLORS.text, flex: 1, fontSize: 16 }, smallInput: { backgroundColor: COLORS.white, borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, color: COLORS.text, fontSize: 16, height: 44, paddingHorizontal: 10 }, smallLabel: { color: COLORS.text, fontSize: 13, fontWeight: '600', marginBottom: 6 }, state: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 30 }, stateTitle: { color: COLORS.text, fontSize: 19, fontWeight: '700', textAlign: 'center' }, textarea: { height: 82, paddingTop: 12, textAlignVertical: 'top' },
+  addExercise: { alignItems: 'center', flexDirection: 'row', gap: 3 }, addText: { color: COLORS.blue, fontWeight: '700' }, cancelText: { color: COLORS.muted, fontSize: 14, fontWeight: '700' }, container: { backgroundColor: COLORS.background, flex: 1 }, content: { padding: 20, paddingBottom: 40 }, emptyList: { paddingVertical: 12 }, emptyText: { color: COLORS.muted, fontSize: 14, lineHeight: 20, paddingVertical: 12 }, exerciseHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12, marginTop: 18 }, input: { borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, color: COLORS.text, fontSize: 16, height: 48, marginBottom: 16, paddingHorizontal: 14 }, itemCard: { backgroundColor: COLORS.white, borderRadius: 10, marginBottom: 12, padding: 14 }, itemHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 }, itemTitle: { color: COLORS.text, fontSize: 16, fontWeight: '700', marginLeft: 8 }, itemTitleWrap: { alignItems: 'center', flexDirection: 'row' }, label: { color: COLORS.text, fontSize: 14, fontWeight: '600', marginBottom: 7 }, loader: { flex: 1 }, message: { color: COLORS.muted, fontSize: 15, marginTop: 8, textAlign: 'center' }, modalBackdrop: { alignItems: 'center', backgroundColor: 'rgba(23, 33, 43, 0.4)', flex: 1, justifyContent: 'center', padding: 24 }, newWorkoutButton: { alignItems: 'center', backgroundColor: COLORS.blue, borderRadius: 8, flexDirection: 'row', justifyContent: 'center', marginTop: 24, paddingVertical: 13 }, newWorkoutHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: 24 }, numberField: { flex: 1, marginRight: 8 }, numberFields: { flexDirection: 'row', marginBottom: 10 }, option: { borderBottomColor: COLORS.border, borderBottomWidth: 1, paddingVertical: 14 }, optionMeta: { color: COLORS.muted, fontSize: 13, marginTop: 3 }, optionText: { color: COLORS.text, fontSize: 16, fontWeight: '600' }, picker: { backgroundColor: COLORS.white, borderRadius: 12, maxHeight: '75%', padding: 20, width: '100%' }, pickerTitle: { color: COLORS.text, fontSize: 20, fontWeight: '700', marginBottom: 12 }, placeholder: { color: '#9AA4AD', flex: 1, fontSize: 16 }, retry: { backgroundColor: COLORS.blue, borderRadius: 8, marginTop: 18, paddingHorizontal: 18, paddingVertical: 12 }, retryText: { color: COLORS.white, fontWeight: '700' }, save: { alignItems: 'center', backgroundColor: COLORS.blue, borderRadius: 8, height: 50, justifyContent: 'center', marginTop: 10 }, newWorkoutText: { color: COLORS.white, fontSize: 16, fontWeight: '700', marginLeft: 6 }, saveText: { color: COLORS.white, fontSize: 16, fontWeight: '700' }, savedCard: { backgroundColor: COLORS.white, borderRadius: 12, marginBottom: 10, overflow: 'hidden' }, savedMain: { padding: 14 }, savedActions: { flexDirection: 'row', position: 'absolute', right: 6, top: 6 }, savedExercises: { color: '#3E4A56', fontSize: 14, lineHeight: 20, marginTop: 4 }, savedHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }, savedName: { color: COLORS.text, flex: 1, fontSize: 16, fontWeight: '700', marginLeft: 8 }, savedStudent: { color: COLORS.blue, flex: 1, fontSize: 14, fontWeight: '600' }, savedTitleRow: { alignItems: 'center', flexDirection: 'row', minHeight: 32, paddingRight: 92 }, sectionSubtitle: { color: COLORS.muted, fontSize: 13, marginTop: 3 }, sectionTitle: { color: COLORS.text, fontSize: 18, fontWeight: '700' }, select: { alignItems: 'center', backgroundColor: COLORS.white, borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, flexDirection: 'row', height: 48, marginBottom: 16, paddingHorizontal: 14 }, selectText: { color: COLORS.text, flex: 1, fontSize: 16 }, smallInput: { backgroundColor: COLORS.white, borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, color: COLORS.text, fontSize: 16, height: 44, paddingHorizontal: 10 }, smallLabel: { color: COLORS.text, fontSize: 13, fontWeight: '600', marginBottom: 6 }, state: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 30 }, stateTitle: { color: COLORS.text, fontSize: 19, fontWeight: '700', textAlign: 'center' }, textarea: { height: 82, paddingTop: 12, textAlignVertical: 'top' },
 });

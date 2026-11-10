@@ -4,14 +4,17 @@ import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal, Pressa
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Fab } from '@/components/fab';
 import { FieldLabel } from '@/components/field-label';
-import { API_ROOT } from '@/constants/api';
+import { StaggerItem } from '@/components/motion';
+import { API_ROOT, comPerfil } from '@/constants/api';
+import { usePerfil } from '@/contexts/perfil';
+import { COLORS } from '@/constants/ui';
 
 type Exercicio = { id: number; nome: string; grupo_muscular: string; descricao: string };
 type ExercicioForm = { nome: string; grupo_muscular: string; descricao: string };
 
 const API_URL = `${API_ROOT}/exercicios/`;
-const COLORS = { blue: '#185FA5', text: '#17212B', muted: '#6B7680', border: '#D9E0E6', background: '#F7F9FB', white: '#FFFFFF', danger: '#B42318' };
 const EMPTY_FORM: ExercicioForm = { nome: '', grupo_muscular: '', descricao: '' };
 
 export default function ExerciciosScreen() {
@@ -24,13 +27,15 @@ export default function ExerciciosScreen() {
   const [editing, setEditing] = useState<Exercicio | null>(null);
   const [form, setForm] = useState<ExercicioForm>(EMPTY_FORM);
 
-  useEffect(() => { void loadExercicios(); }, []);
+  const { perfilId } = usePerfil();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { void loadExercicios(); }, [perfilId]);
 
   async function loadExercicios() {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(API_URL);
+      const response = await fetch(comPerfil(API_URL, perfilId));
       if (!response.ok) throw new Error('Não foi possível carregar os exercícios.');
       const data: Exercicio[] | { results: Exercicio[] } = await response.json();
       setExercicios(Array.isArray(data) ? data : data.results);
@@ -51,7 +56,7 @@ export default function ExerciciosScreen() {
     if (!nome) { Alert.alert('Nome obrigatório', 'Informe o nome do exercício para continuar.'); return; }
     setSaving(true);
     try {
-      const response = await fetch(editing ? `${API_URL}${editing.id}/` : API_URL, {
+      const response = await fetch(editing ? `${API_URL}${editing.id}/` : comPerfil(API_URL, perfilId), {
         method: editing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nome, grupo_muscular: form.grupo_muscular.trim(), descricao: form.descricao.trim() }),
@@ -79,14 +84,14 @@ export default function ExerciciosScreen() {
     } catch (requestError) { Alert.alert('Erro', requestError instanceof Error ? requestError.message : 'Erro ao excluir exercício.'); }
   }
 
-  function renderItem({ item }: { item: Exercicio }) {
-    return <View style={styles.row}>
-      <Pressable accessibilityLabel={`Editar ${item.nome}`} onPress={() => openEdit(item)} style={styles.info}>
+  function renderItem({ item, index }: { item: Exercicio; index: number }) {
+    return <StaggerItem index={index} style={styles.row}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Editar ${item.nome}`} onPress={() => openEdit(item)} style={styles.info}>
         <View style={styles.icon}><MaterialIcons name="fitness-center" size={23} color={COLORS.blue} /></View>
         <View style={styles.copy}><Text style={styles.name}>{item.nome}</Text><Text style={styles.meta}>{item.grupo_muscular || 'Grupo muscular não informado'}</Text></View>
       </Pressable>
-      <Pressable accessibilityLabel={`Excluir ${item.nome}`} onPress={() => deleteExercicio(item)} style={styles.action}><MaterialIcons name="delete-outline" size={22} color={COLORS.danger} /></Pressable>
-    </View>;
+      <Pressable accessibilityRole="button" accessibilityLabel={`Excluir ${item.nome}`} onPress={() => deleteExercicio(item)} style={styles.action}><MaterialIcons name="delete-outline" size={22} color={COLORS.danger} /></Pressable>
+    </StaggerItem>;
   }
 
   return <View style={styles.container}>
@@ -95,7 +100,7 @@ export default function ExerciciosScreen() {
       contentContainerStyle={exercicios.length ? styles.list : styles.emptyList}
       ListEmptyComponent={<View style={styles.state}><MaterialIcons name="fitness-center" size={46} color={COLORS.blue} /><Text style={styles.stateTitle}>Nenhum exercício cadastrado</Text><Text style={styles.message}>Cadastre o primeiro exercício para começar.</Text></View>}
     />}
-    <Pressable accessibilityLabel="Adicionar exercício" onPress={openCreate} style={styles.fab}><MaterialIcons name="add" size={28} color={COLORS.white} /></Pressable>
+    <Fab accessibilityLabel="Adicionar exercício" onPress={openCreate} />
     <Modal animationType="slide" transparent visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
       <KeyboardAvoidingView behavior="padding" style={styles.backdrop}><View style={[styles.modal, { paddingBottom: 32 + insets.bottom }]}>
         <View style={styles.modalHeader}><Text style={styles.modalTitle}>{editing ? 'Editar exercício' : 'Novo exercício'}</Text><Pressable onPress={() => setModalVisible(false)}><MaterialIcons name="close" size={24} color={COLORS.muted} /></Pressable></View>

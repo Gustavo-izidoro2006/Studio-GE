@@ -16,13 +16,18 @@ import {
   View,
 } from 'react-native';
 import { BarChart } from 'react-native-gifted-charts';
+import Animated, { FadeInDown, FadeOut, LinearTransition, ReduceMotion, interpolateColor, useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FieldLabel } from '@/components/field-label';
+import { PressableScale } from '@/components/pressable-scale';
+import { CATEGORIA_ICON } from '@/components/tag';
 import { DateInput } from '@/components/date-input';
-import { API_ROOT } from '@/constants/api';
+import { API_ROOT, comPerfil } from '@/constants/api';
+import { usePerfil } from '@/contexts/perfil';
 import { converterDataParaISO, dataHojeBrasileira, formatarDataParaEntrada } from '@/utils/date';
+import { COLORS, MOTION } from '@/constants/ui';
 
 type IconName = React.ComponentProps<typeof MaterialIcons>['name'];
 
@@ -52,7 +57,6 @@ type Despesa = { id: number; descricao: string; categoria: string; valor: string
 type Pagamento = { id: number; aluno_nome: string; valor: string; data_pagamento: string };
 type DespesaForm = { descricao: string; categoria: string; valor: string; data: string };
 
-const COLORS = { blue: '#185FA5', yellow: '#EF9F27', text: '#17212B', muted: '#6B7680', border: '#D9E0E6', background: '#F7F9FB', white: '#FFFFFF', danger: '#B42318', lightBlue: '#DCEAF7', lightYellow: '#FCEBCB', lightRed: '#FBE4E1', lightGreen: '#DFF1E3', green: '#1E6B35' };
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 const CATEGORIAS: Array<{ value: string; label: string }> = [
   { value: 'aluguel', label: 'Aluguel' },
@@ -136,6 +140,34 @@ function categoriaLabel(value: string) {
   return CATEGORIAS.find((c) => c.value === value)?.label ?? value;
 }
 
+// Linha de pendência: ao marcar "Pago", dá um flash verde com "Pago" e sai da lista (G6.4).
+function PendenciaRow({ p, index, pagando, onPagar }: { p: Pendencia; index: number; pagando: boolean; onPagar: () => void }) {
+  const s = situacao(p);
+  const flash = useSharedValue(0);
+  useEffect(() => {
+    if (pagando) flash.value = withSequence(withTiming(1, { duration: 140 }), withTiming(0.7, { duration: 260 }));
+  }, [pagando, flash]);
+  const fundo = useAnimatedStyle(() => ({ backgroundColor: interpolateColor(flash.value, [0, 1], ['rgba(223,241,227,0)', COLORS.lightGreen]) }));
+
+  return (
+    <Animated.View
+      entering={index < MOTION.staggerMax ? FadeInDown.duration(MOTION.base).delay(index * MOTION.stagger).reduceMotion(ReduceMotion.System) : undefined}
+      exiting={FadeOut.duration(MOTION.base).reduceMotion(ReduceMotion.System)}
+      layout={LinearTransition.duration(MOTION.base).reduceMotion(ReduceMotion.System)}
+      style={[styles.pendRow, fundo]}>
+      <MaterialIcons name={pagando ? 'check-circle' : s.icone} size={22} color={pagando ? COLORS.green : s.atrasado ? COLORS.danger : COLORS.muted} />
+      <View style={styles.pendCopy}>
+        <Text style={styles.pendName}>{p.aluno_nome}</Text>
+        <Text style={[styles.pendStatus, s.atrasado && !pagando && { color: COLORS.danger }, pagando && { color: COLORS.green }]}>{pagando ? 'Pago' : s.texto}</Text>
+      </View>
+      <Text style={styles.pendValue}>{dinheiro(p.valor)}</Text>
+      <PressableScale accessibilityRole="button" accessibilityLabel={`Marcar ${p.aluno_nome} como pago`} disabled={pagando} onPress={onPagar} pressedScale={0.94} style={[styles.payButton, pagando && styles.payButtonDone]}>
+        {pagando ? <MaterialIcons name="check" size={20} color={COLORS.white} /> : <Text style={styles.payText}>Pago</Text>}
+      </PressableScale>
+    </Animated.View>
+  );
+}
+
 async function pedir<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   if (!response.ok) throw new Error('Falha na requisição.');
@@ -155,6 +187,8 @@ export default function FinanceiroScreen() {
   const [aviso, setAviso] = useState<{ id: number; texto: string } | null>(null);
   const avisoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [barraSelecionada, setBarraSelecionada] = useState<number | null>(null);
+  const [pagandoId, setPagandoId] = useState<number | null>(null);
+  const reduceMotion = useReducedMotion();
 
   const [formVisible, setFormVisible] = useState(false);
   const [editando, setEditando] = useState<Despesa | null>(null);
@@ -169,20 +203,23 @@ export default function FinanceiroScreen() {
   const [historicoLoading, setHistoricoLoading] = useState(false);
   const [historicoError, setHistoricoError] = useState(false);
 
+  const { perfilId } = usePerfil();
+
+  // Tudo do financeiro é do perfil ativo (specs/perfis.md).
   const carregar = useCallback(async (alvo: string, silencioso = false) => {
     if (!silencioso) setLoading(true);
     setError(false);
     try {
       // Garante que as mensalidades do mês atual existam antes de somar (a API não gera sozinha no resumo).
-      if (alvo === mesAtual()) await pedir(`${API_ROOT}/financeiro/gerar-mensalidades/`, POST);
-      setResumo(await pedir<Resumo>(`${API_ROOT}/financeiro/resumo/?mes=${alvo}`));
+      if (alvo === mesAtual()) await pedir(comPerfil(`${API_ROOT}/financeiro/gerar-mensalidades/`, perfilId), POST);
+      setResumo(await pedir<Resumo>(comPerfil(`${API_ROOT}/financeiro/resumo/?mes=${alvo}`, perfilId)));
       setBarraSelecionada(null);
     } catch {
       setError(true);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [perfilId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -192,7 +229,7 @@ export default function FinanceiroScreen() {
 
   useEffect(() => {
     setLoading(true);
-  }, [mes]);
+  }, [mes, perfilId]);
 
   useEffect(() => () => {
     if (avisoTimer.current) clearTimeout(avisoTimer.current);
@@ -233,7 +270,7 @@ export default function FinanceiroScreen() {
 
     setSaving(true);
     try {
-      await pedir(editando ? `${API_ROOT}/despesas/${editando.id}/` : `${API_ROOT}/despesas/`, {
+      await pedir(editando ? `${API_ROOT}/despesas/${editando.id}/` : comPerfil(`${API_ROOT}/despesas/`, perfilId), {
         method: editando ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ descricao, categoria: form.categoria, valor: valor.toFixed(2), data }),
@@ -251,7 +288,7 @@ export default function FinanceiroScreen() {
   async function carregarDespesas() {
     setListaLoading(true);
     try {
-      setDespesas(await pedir<Despesa[]>(`${API_ROOT}/despesas/?mes=${mes}`));
+      setDespesas(await pedir<Despesa[]>(comPerfil(`${API_ROOT}/despesas/?mes=${mes}`, perfilId)));
     } catch {
       Alert.alert('Erro', 'Não foi possível carregar as despesas.');
     } finally {
@@ -268,7 +305,7 @@ export default function FinanceiroScreen() {
     setHistoricoLoading(true);
     setHistoricoError(false);
     try {
-      setPagamentos(await pedir<Pagamento[]>(`${API_ROOT}/mensalidades/?pagas=true`));
+      setPagamentos(await pedir<Pagamento[]>(comPerfil(`${API_ROOT}/mensalidades/?pagas=true`, perfilId)));
     } catch {
       setHistoricoError(true);
     } finally {
@@ -315,12 +352,16 @@ export default function FinanceiroScreen() {
   }
 
   async function marcarPago(p: Pendencia) {
+    setPagandoId(p.id);
     try {
-      await pedir(`${API_ROOT}/mensalidades/${p.id}/pagar/`, POST);
+      // O flash verde fica visível um instante antes de o item sair da lista.
+      await Promise.all([pedir(`${API_ROOT}/mensalidades/${p.id}/pagar/`, POST), new Promise((done) => setTimeout(done, reduceMotion ? 0 : 420))]);
       mostrarAviso(p.id);
       await carregar(mes, true);
     } catch {
       Alert.alert('Erro', 'Não foi possível marcar como pago.');
+    } finally {
+      setPagandoId(null);
     }
   }
 
@@ -451,22 +492,9 @@ export default function FinanceiroScreen() {
               <Text style={styles.okText}>Tudo em dia</Text>
             </View>
           ) : (
-            r.pendencias.map((p) => {
-              const s = situacao(p);
-              return (
-                <View key={p.id} style={styles.pendRow}>
-                  <MaterialIcons name={s.icone} size={22} color={s.atrasado ? COLORS.danger : COLORS.muted} />
-                  <View style={styles.pendCopy}>
-                    <Text style={styles.pendName}>{p.aluno_nome}</Text>
-                    <Text style={[styles.pendStatus, s.atrasado && { color: COLORS.danger }]}>{s.texto}</Text>
-                  </View>
-                  <Text style={styles.pendValue}>{dinheiro(p.valor)}</Text>
-                  <Pressable accessibilityLabel={`Marcar ${p.aluno_nome} como pago`} onPress={() => void marcarPago(p)} style={styles.payButton}>
-                    <Text style={styles.payText}>Pago</Text>
-                  </Pressable>
-                </View>
-              );
-            })
+            r.pendencias.map((p, index) => (
+              <PendenciaRow key={p.id} p={p} index={index} pagando={pagandoId === p.id} onPagar={() => void marcarPago(p)} />
+            ))
           )}
         </View>
 
@@ -565,7 +593,10 @@ export default function FinanceiroScreen() {
               keyExtractor={(d) => String(d.id)}
               ListEmptyComponent={<Text style={styles.emptyText}>Nenhuma despesa neste mês.</Text>}
               renderItem={({ item }) => (
-                <Pressable accessibilityHint="Toque para editar ou excluir" onPress={() => opcoesDespesa(item)} style={styles.despesaRow}>
+                <Pressable accessibilityRole="button" accessibilityHint="Toque para editar ou excluir" onPress={() => opcoesDespesa(item)} style={styles.despesaRow}>
+                  <View style={styles.categoryIcon}>
+                    <MaterialIcons name={CATEGORIA_ICON[item.categoria] ?? 'more-horiz'} size={20} color={COLORS.yellowText} />
+                  </View>
                   <View style={styles.pendCopy}>
                     <Text style={styles.pendName}>{item.descricao}</Text>
                     <Text style={styles.pendStatus}>{categoriaLabel(item.categoria)} · {formatarData(item.data)}</Text>
@@ -633,6 +664,7 @@ export default function FinanceiroScreen() {
               }
               renderItem={({ item }) => (
                 <View style={styles.despesaRow}>
+                  <MaterialIcons name="check-circle-outline" size={22} color={COLORS.green} />
                   <View style={styles.pendCopy}>
                     <Text style={styles.pendName}>{item.aluno_nome}</Text>
                     <Text style={styles.pendStatus}>Pago em {formatarDataHora(item.data_pagamento)}</Text>
@@ -695,6 +727,8 @@ const styles = StyleSheet.create({
   okText: { color: COLORS.green, fontSize: 16, fontWeight: '700' },
   payButton: { alignItems: 'center', backgroundColor: COLORS.blue, borderRadius: 8, justifyContent: 'center', marginLeft: 10, minHeight: 44, minWidth: 56, paddingHorizontal: 12 },
   payText: { color: COLORS.white, fontSize: 14, fontWeight: '700' },
+  payButtonDone: { backgroundColor: COLORS.green },
+  categoryIcon: { alignItems: 'center', backgroundColor: COLORS.paleYellow, borderRadius: 18, height: 36, justifyContent: 'center', width: 36 },
   pendCopy: { flex: 1, marginLeft: 10 },
   pendName: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
   pendRow: { alignItems: 'center', borderBottomColor: COLORS.border, borderBottomWidth: 1, flexDirection: 'row', minHeight: 64, paddingVertical: 8 },

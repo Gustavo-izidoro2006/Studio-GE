@@ -1,6 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,14 +12,23 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
+import Animated, { FadeIn, FadeOut, LinearTransition, ReduceMotion, useReducedMotion } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Avatar } from '@/components/avatar';
+import { EmptyState } from '@/components/empty-state';
+import { FAB_SPACE, Fab } from '@/components/fab';
 import { FieldLabel } from '@/components/field-label';
+import { FadeInView } from '@/components/motion';
+import { Tag } from '@/components/tag';
 import { DateInput } from '@/components/date-input';
-import { API_ROOT } from '@/constants/api';
+import { API_ROOT, comPerfil } from '@/constants/api';
+import { usePerfil } from '@/contexts/perfil';
 import { converterDataParaISO, dataHojeBrasileira } from '@/utils/date';
+import { COLORS, MOTION } from '@/constants/ui';
 
 type Aluno = {
   nome: string;
@@ -53,16 +62,6 @@ type Field = {
   icon: React.ComponentProps<typeof MaterialIcons>['name'];
 };
 
-const COLORS = {
-  blue: '#185FA5',
-  yellow: '#EF9F27',
-  paleYellow: '#FFF3D9',
-  text: '#17212B',
-  muted: '#6B7680',
-  border: '#D9E0E6',
-  background: '#F7F9FB',
-  white: '#FFFFFF',
-};
 
 const fields: Field[] = [
   { key: 'peso', label: 'Peso', icon: 'monitor-weight' },
@@ -92,13 +91,103 @@ function formatDate(date: string | null) {
   return year && month && day ? `${day}/${month}/${year}` : date;
 }
 
-function displayValue(value: number | string | null) {
-  return value === null || value === undefined || value === '' ? 'Vazio' : String(value);
+
+/** Medida com unidade e vírgula ("70,8 kg"); "Vazio" quando não foi medida. */
+function displayMetric(value: number | string | null, key: MedidaKey) {
+  if (value === null || value === undefined || value === '') return 'Vazio';
+  const numero = Number(value);
+  return Number.isNaN(numero) ? String(value) : formatarValor(numero, key);
+}
+
+function displayImc(value: number | string | null) {
+  if (value === null || value === undefined || value === '') return 'Vazio';
+  const numero = Number(value);
+  return Number.isNaN(numero) ? String(value) : formatarNumero(numero, 1);
 }
 
 function responseItems<T>(data: T[] | { results: T[] }): T[] {
   return Array.isArray(data) ? data : data.results;
 }
+
+// ---- Apoio à aba Evolução (specs/tela-aluno-v012.md, A3 e A4) ----
+
+const UNIDADES: Record<MedidaKey, string> = {
+  peso: 'kg', altura: 'm',
+  braco: 'cm', abdomen: 'cm', torax: 'cm', cintura: 'cm', quadril: 'cm', perna: 'cm', panturrilha: 'cm',
+  suprailiaca: 'mm', subescapular: 'mm', triceps: 'mm',
+};
+
+function casasDecimais(key: MedidaKey) {
+  return key === 'altura' ? 2 : 1;
+}
+
+/** Número no padrão brasileiro (vírgula), sem depender de Intl. */
+function formatarNumero(value: number, casas: number) {
+  return value.toFixed(casas).replace('.', ',');
+}
+
+function formatarValor(value: number, key: MedidaKey) {
+  return `${formatarNumero(value, casasDecimais(key))} ${UNIDADES[key]}`;
+}
+
+/** Diferença com sinal: "+0,4 kg", "−0,4 kg" ou "sem mudança". */
+function formatarDiferenca(diff: number, key: MedidaKey) {
+  const casas = casasDecimais(key);
+  if (Math.abs(diff) < 0.5 * 10 ** -casas) return 'sem mudança';
+  return `${diff > 0 ? '+' : '−'}${formatarNumero(Math.abs(diff), casas)} ${UNIDADES[key]}`;
+}
+
+/** "DD/MM" direto do texto AAAA-MM-DD (sem passar pelo fuso: corrige o dia a menos). */
+function formatarDiaMes(iso: string) {
+  const [, month, day] = iso.split('-');
+  return `${day}/${month}`;
+}
+
+function dataLocal(iso: string) {
+  const [year, month, day] = iso.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function diasEntre(inicioIso: string, fimIso: string) {
+  return Math.round((dataLocal(fimIso).getTime() - dataLocal(inicioIso).getTime()) / 86400000);
+}
+
+/** "hoje", "há 1 dia", "há 9 dias", "há 3 meses". */
+function haQuantoTempo(iso: string) {
+  const hoje = new Date();
+  const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+  const dias = Math.max(0, diasEntre(iso, hojeIso));
+  if (dias === 0) return 'hoje';
+  if (dias === 1) return 'há 1 dia';
+  if (dias < 60) return `há ${dias} dias`;
+  return `há ${Math.round(dias / 30.44)} meses`;
+}
+
+/** Escala do eixo vertical ajustada à faixa dos dados, com valores redondos. */
+function escalaDoGrafico(values: number[]) {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const faixa = max - min;
+  const folga = faixa > 0 ? faixa * 0.25 : Math.max(Math.abs(max) * 0.05, 1);
+  const alvo = (faixa + 2 * folga) / 4;
+  // Só passos que geram números redondos no eixo (sem 2,5 ou 0,25).
+  const passos = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100];
+  const passo = passos.find((item) => item >= alvo) ?? 100;
+  const inicio = Math.floor((min - folga) / passo) * passo;
+  const fim = Math.ceil((max + folga) / passo) * passo;
+  return { inicio, passo, secoes: Math.max(1, Math.round((fim - inicio) / passo)) };
+}
+
+type PontoGrafico = {
+  value: number;
+  label: string;
+  data: string;
+  textoValor: string;
+  textoDiferenca: string;
+  dataPointText?: string;
+  dataPointColor?: string;
+  dataPointRadius?: number;
+};
 
 type TabType = 'atual' | 'evolucao' | 'historico';
 type MetricKey = MedidaKey;
@@ -136,6 +225,7 @@ const metricCategories: { title: string; options: { key: MetricKey; label: strin
 export default function MedidasAlunoScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { perfilId } = usePerfil();
   const [aluno, setAluno] = useState<Aluno | null>(null);
   const [medida, setMedida] = useState<Medida | null>(null);
   const [historicoMedidas, setHistoricoMedidas] = useState<Medida[]>([]);
@@ -151,6 +241,22 @@ export default function MedidasAlunoScreen() {
   const [selectedHistoryIds, setSelectedHistoryIds] = useState<number[]>([]);
   const [comparisonMetricSelectorVisible, setComparisonMetricSelectorVisible] = useState(false);
   const [selectedComparisonMetrics, setSelectedComparisonMetrics] = useState<MetricKey[]>([]);
+  const [anosAbertos, setAnosAbertos] = useState<string[]>([]);
+  const { width: windowWidth } = useWindowDimensions();
+  const reduceMotion = useReducedMotion();
+
+  // Histórico agrupado por ano (mais recente primeiro); pastas só aparecem com mais de um ano.
+  const historicoPorAno = historicoMedidas.reduce<{ ano: string; itens: Medida[] }[]>((grupos, item) => {
+    const ano = item.data_avaliacao.slice(0, 4);
+    const grupo = grupos.find((atual) => atual.ano === ano);
+    if (grupo) grupo.itens.push(item);
+    else grupos.push({ ano, itens: [item] });
+    return grupos;
+  }, []);
+
+  function toggleAno(ano: string) {
+    setAnosAbertos((current) => current.includes(ano) ? current.filter((item) => item !== ano) : [...current, ano]);
+  }
 
   const loadDetails = useCallback(async () => {
     setLoading(true);
@@ -158,7 +264,7 @@ export default function MedidasAlunoScreen() {
     try {
       const [alunoResponse, medidasResponse] = await Promise.all([
         fetch(`${API_ROOT}/alunos/${id}/`),
-        fetch(`${API_ROOT}/medidas/`),
+        fetch(comPerfil(`${API_ROOT}/medidas/?aluno=${id}`, perfilId)),
       ]);
       if (!alunoResponse.ok || !medidasResponse.ok) throw new Error('Não foi possível carregar as medidas.');
       const alunoData: Aluno = await alunoResponse.json();
@@ -176,12 +282,14 @@ export default function MedidasAlunoScreen() {
         return medidasOrdenadas[0].id;
       });
       setSelectedHistoryIds((current) => current.filter((selectedId) => medidasOrdenadas.some((item) => item.id === selectedId)));
+      // A pasta do ano mais recente começa aberta.
+      setAnosAbertos((current) => current.length || !medidasOrdenadas.length ? current : [medidasOrdenadas[0].data_avaliacao.slice(0, 4)]);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Erro ao carregar medidas.');
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, perfilId]);
 
   function toggleHistorySelection(measureId: number) {
     setSelectedHistoryIds((current) => current.includes(measureId) ? current.filter((selectedId) => selectedId !== measureId) : [...current, measureId]);
@@ -233,8 +341,6 @@ export default function MedidasAlunoScreen() {
     }
   }
 
-  const atual = historicoMedidas[0] ?? medida;
-  const anterior = historicoMedidas[1] ?? null;
   const selectedHistoryMeasure = historicoMedidas.find((item) => item.id === selectedHistoryId) ?? historicoMedidas[0] ?? null;
   const selectedMetricLabel = metricCategories.flatMap((category) => category.options).find((option) => option.key === selectedMetric)?.label ?? 'Peso';
   const comparisonMetricKeys = selectedComparisonMetrics.length === 0 ? measurementKeys : selectedComparisonMetrics;
@@ -242,22 +348,30 @@ export default function MedidasAlunoScreen() {
     .filter((item) => selectedHistoryIds.includes(item.id))
     .sort((first, second) => first.data_avaliacao.localeCompare(second.data_avaliacao));
 
-  const metricSeries = historicoMedidas
+  // Só avaliações em que a métrica foi medida, da mais antiga para a mais recente.
+  const metricPoints = historicoMedidas
     .slice()
     .sort((first, second) => first.data_avaliacao.localeCompare(second.data_avaliacao))
     .map((item) => {
-      const value = Number(item[selectedMetric]);
-      if (Number.isNaN(value)) {
-        return null;
-      }
-
-      return {
-        value,
-        label: new Date(item.data_avaliacao).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
-        dataPointText: value.toFixed(selectedMetric === 'peso' || selectedMetric === 'altura' ? 1 : 2),
-      };
+      const raw = item[selectedMetric];
+      const value = raw === null || raw === '' ? NaN : Number(raw);
+      return Number.isNaN(value) ? null : { value, data: item.data_avaliacao };
     })
-    .filter((item): item is { value: number; label: string; dataPointText: string } => item !== null);
+    .filter((item): item is { value: number; data: string } => item !== null);
+
+  const metricSeries: PontoGrafico[] = metricPoints.map((point, index) => {
+    const isLast = index === metricPoints.length - 1;
+    const previous = index > 0 ? metricPoints[index - 1] : null;
+    return {
+      value: point.value,
+      data: point.data,
+      label: formatarDiaMes(point.data),
+      textoValor: formatarValor(point.value, selectedMetric),
+      textoDiferenca: previous ? formatarDiferenca(point.value - previous.value, selectedMetric) : 'primeira avaliação',
+      // Número só no último ponto (o valor atual); os demais aparecem ao tocar e na tabela.
+      ...(isLast ? { dataPointText: formatarNumero(point.value, casasDecimais(selectedMetric)), dataPointColor: COLORS.yellow, dataPointRadius: 6 } : {}),
+    };
+  });
 
   const renderComparisonTable = () => {
     const comparisonFields = fields.filter((field) => comparisonMetricKeys.includes(field.key));
@@ -266,9 +380,9 @@ export default function MedidasAlunoScreen() {
         <View style={styles.comparisonEmptyCard}>
           <Text style={styles.comparisonEmptyTitle}>{comparisonMeasures.length === 0 ? 'Selecione avaliações no Histórico' : 'Selecione mais uma avaliação'}</Text>
           <Text style={styles.comparisonEmptyText}>{comparisonMeasures.length === 0 ? 'Marque duas ou mais avaliações para ver a comparação.' : 'Marque mais uma avaliação para ver a comparação.'}</Text>
-          <Pressable style={styles.compareButton} onPress={() => setActiveTab('historico')}>
-            <MaterialIcons name="check-box" size={20} color={COLORS.white} />
-            <Text style={styles.compareButtonText}>Escolher avaliações</Text>
+          <Pressable accessibilityRole="button" style={styles.compareButtonSecondary} onPress={() => setActiveTab('historico')}>
+            <MaterialIcons name="check-box" size={20} color={COLORS.blue} />
+            <Text style={styles.compareButtonSecondaryText}>Escolher avaliações</Text>
           </Pressable>
         </View>
       );
@@ -302,7 +416,7 @@ export default function MedidasAlunoScreen() {
                 <View key={field.key} style={styles.comparisonTableRow}>
                   {comparisonMeasures.map((measure) => (
                     <View key={`${field.key}-${measure.id}`} style={styles.comparisonValueCell}>
-                      <Text style={styles.comparisonValueText}>{displayValue(measure[field.key])}</Text>
+                      <Text style={styles.comparisonValueText}>{displayMetric(measure[field.key], field.key)}</Text>
                     </View>
                   ))}
                 </View>
@@ -325,7 +439,7 @@ export default function MedidasAlunoScreen() {
           <Text style={styles.imcLabel}>IMC</Text>
           <Text style={styles.imcCaption}>Índice de massa corporal</Text>
         </View>
-        <Text style={styles.imcValue}>{displayValue(measure?.imc ?? null)}</Text>
+        <Text style={styles.imcValue}>{displayImc(measure?.imc ?? null)}</Text>
       </View>
       <View style={styles.fieldsCard}>
         {showBirthDate && (
@@ -339,25 +453,38 @@ export default function MedidasAlunoScreen() {
           <View key={field.key} style={styles.fieldRow}>
             <MaterialIcons name={field.icon} size={22} color={COLORS.blue} />
             <Text style={styles.fieldLabel}>{field.label}</Text>
-            <Text style={[styles.fieldValue, (measure?.[field.key] === null || measure?.[field.key] === undefined || measure?.[field.key] === '') && styles.emptyValue]}>{displayValue(measure?.[field.key] ?? null)}</Text>
+            <Text style={[styles.fieldValue, (measure?.[field.key] === null || measure?.[field.key] === undefined || measure?.[field.key] === '') && styles.emptyValue]}>{displayMetric(measure?.[field.key] ?? null, field.key)}</Text>
           </View>
         ))}
       </View>
     </>
   );
 
-  const renderAtualTab = () => (
+  const renderSemAvaliacao = (icon: React.ComponentProps<typeof MaterialIcons>['name'], title: string, text: string) => (
     <ScrollView contentContainerStyle={styles.content}>
-      <Text style={styles.studentName}>{aluno?.nome ?? 'Aluno'}</Text>
+      <View style={styles.studentHeading}>
+        <Avatar nome={aluno?.nome ?? 'Aluno'} size={48} />
+        <Text style={[styles.studentName, styles.studentNameInline]}>{aluno?.nome ?? 'Aluno'}</Text>
+      </View>
+      <EmptyState icon={icon} title={title} text={text} actionLabel="Registrar primeira avaliação" onAction={openMeasureForm} />
+    </ScrollView>
+  );
+
+  const renderAtualTab = () => historicoMedidas.length === 0 ? renderSemAvaliacao('assignment', 'Nenhuma avaliação ainda', 'Registre a primeira avaliação para acompanhar as medidas e o IMC deste aluno.') : (
+    <ScrollView contentContainerStyle={[styles.content, { paddingBottom: FAB_SPACE }]}>
+      <View style={styles.studentHeading}>
+        <Avatar nome={aluno?.nome ?? 'Aluno'} size={48} />
+        <Text style={[styles.studentName, styles.studentNameInline]}>{aluno?.nome ?? 'Aluno'}</Text>
+      </View>
       <Text style={styles.lastEvaluation}>
-        Última avaliação: {medida ? formatDate(medida.data_avaliacao) : 'Vazio'}
+        Última avaliação: {medida ? `${formatDate(medida.data_avaliacao)} (${haQuantoTempo(medida.data_avaliacao)})` : 'Vazio'}
       </Text>
       <View style={styles.imcCard}>
         <View>
           <Text style={styles.imcLabel}>IMC</Text>
           <Text style={styles.imcCaption}>Índice de massa corporal</Text>
         </View>
-        <Text style={styles.imcValue}>{displayValue(medida?.imc ?? null)}</Text>
+        <Text style={styles.imcValue}>{displayImc(medida?.imc ?? null)}</Text>
       </View>
       <View style={styles.fieldsCard}>
         <View style={styles.fieldRow}>
@@ -369,110 +496,160 @@ export default function MedidasAlunoScreen() {
           <View key={field.key} style={styles.fieldRow}>
             <MaterialIcons name={field.icon} size={22} color={COLORS.blue} />
             <Text style={styles.fieldLabel}>{field.label}</Text>
-            <Text style={[styles.fieldValue, (medida?.[field.key] === null || medida?.[field.key] === undefined || medida?.[field.key] === '') && styles.emptyValue]}>{displayValue(medida?.[field.key] ?? null)}</Text>
+            <Text style={[styles.fieldValue, (medida?.[field.key] === null || medida?.[field.key] === undefined || medida?.[field.key] === '') && styles.emptyValue]}>{displayMetric(medida?.[field.key] ?? null, field.key)}</Text>
           </View>
         ))}
       </View>
     </ScrollView>
   );
 
+  const renderVariacao = (label: string, diff: number | null) => {
+    const texto = diff === null ? '—' : formatarDiferenca(diff, selectedMetric);
+    const icon: React.ComponentProps<typeof MaterialIcons>['name'] = diff === null || texto === 'sem mudança' ? 'remove' : diff < 0 ? 'arrow-downward' : 'arrow-upward';
+    return (
+      <View style={styles.variacaoRow}>
+        <Text style={styles.variacaoLabel}>{label}</Text>
+        <View style={styles.variacaoValueWrap}>
+          <MaterialIcons name={icon} size={16} color={COLORS.text} />
+          <Text style={styles.variacaoValue}>{texto}</Text>
+        </View>
+      </View>
+    );
+  };
+
   const renderEvolucaoTab = () => {
+    if (historicoMedidas.length === 0) {
+      return renderSemAvaliacao('show-chart', 'Sem avaliações para acompanhar', 'Com duas ou mais avaliações, a evolução de cada medida aparece aqui.');
+    }
     if (historicoMedidas.length < 2) {
       return (
-        <View style={styles.emptyEvolutionBox}>
-          <Text style={styles.emptyEvolutionTitle}>Ainda não há dados suficientes para comparação</Text>
-          <Text style={styles.emptyEvolutionText}>Cadastre pelo menos duas avaliações para acompanhar a evolução do aluno.</Text>
-        </View>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: FAB_SPACE }]}>
+          <Text style={styles.studentName}>{aluno?.nome ?? 'Aluno'}</Text>
+          <EmptyState icon="show-chart" title="Falta mais uma avaliação" text="Com duas ou mais avaliações, a evolução de cada medida aparece aqui." />
+        </ScrollView>
       );
     }
 
-    if (!atual || !anterior) {
-      return (
-        <View style={styles.emptyEvolutionBox}>
-          <Text style={styles.emptyEvolutionTitle}>Ainda não há dados suficientes para comparação</Text>
-          <Text style={styles.emptyEvolutionText}>Cadastre pelo menos duas avaliações para acompanhar a evolução do aluno.</Text>
-        </View>
-      );
-    }
+    const ultimo = metricPoints[metricPoints.length - 1] ?? null;
+    const penultimo = metricPoints.length > 1 ? metricPoints[metricPoints.length - 2] : null;
+    const primeiro = metricPoints[0] ?? null;
+    const diasTotal = primeiro && ultimo ? diasEntre(primeiro.data, ultimo.data) : 0;
+    const meses = diasTotal / 30.44;
+    const ritmo = primeiro && ultimo && metricPoints.length > 2 && diasTotal >= 28 ? (ultimo.value - primeiro.value) / meses : null;
+    const textoRitmo = ritmo === null ? null : formatarDiferenca(ritmo, selectedMetric);
 
-    const atualValue = Number(atual[selectedMetric]);
-    const anteriorValue = Number(anterior[selectedMetric]);
-    const diferencaSelecionada = Number.isNaN(atualValue) || Number.isNaN(anteriorValue) ? null : atualValue - anteriorValue;
-    const chartWidth = Math.max(320, metricSeries.length * 72);
+    const escala = metricSeries.length >= 2 ? escalaDoGrafico(metricSeries.map((point) => point.value)) : null;
+    const casasEixo = escala ? (escala.passo < 0.1 ? 2 : escala.passo < 1 ? 1 : 0) : 0;
+    // Até 6 avaliações o gráfico cabe na tela; com mais, rola para o lado (abrindo no fim).
+    const larguraGrafico = Math.max(220, windowWidth - 40 - 32 - 44);
+    const pontosVisiveis = Math.min(Math.max(metricSeries.length, 2), 6);
+    const espacamento = (larguraGrafico - 36) / (pontosVisiveis - 1);
+    const resumoAcessivel = metricSeries.map((point) => `${formatDate(point.data)}: ${point.textoValor}`).join('; ');
 
     return (
       <>
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: FAB_SPACE }]}>
         <Text style={styles.studentName}>{aluno?.nome ?? 'Aluno'}</Text>
 
-        <Pressable style={styles.compareButton} onPress={() => setActiveTab('historico')}>
-          <MaterialIcons name="compare-arrows" size={20} color={COLORS.white} />
-          <Text style={styles.compareButtonText}>Comparar avaliações</Text>
-        </Pressable>
-
-        <Pressable style={styles.metricDropdown} onPress={() => setMetricSelectorVisible(true)}>
+        <Pressable accessibilityRole="button" style={styles.metricDropdown} onPress={() => setMetricSelectorVisible(true)}>
           <View>
             <Text style={styles.metricDropdownLabel}>Métrica exibida</Text>
-            <Text style={styles.metricDropdownValue}>{selectedMetricLabel}</Text>
+            <Text style={styles.metricDropdownValue}>{`${selectedMetricLabel} (${UNIDADES[selectedMetric]})`}</Text>
           </View>
           <MaterialIcons name="keyboard-arrow-down" size={26} color={COLORS.blue} />
         </Pressable>
 
         <View style={styles.comparisonCard}>
-          <Text style={styles.comparisonValue}>
-            {diferencaSelecionada === null ? '—' : `${diferencaSelecionada > 0 ? '+' : ''}${diferencaSelecionada.toFixed(selectedMetric === 'peso' || selectedMetric === 'altura' ? 1 : 2)} ${selectedMetric === 'peso' ? 'kg' : ''}`}
-          </Text>
-          <Text style={styles.comparisonLabel}>desde a última avaliação</Text>
+          <Text style={styles.summaryLabel}>{`${selectedMetricLabel} atual`}</Text>
+          <Text style={styles.comparisonValue}>{ultimo ? formatarValor(ultimo.value, selectedMetric) : '—'}</Text>
+          <Text style={styles.comparisonLabel}>{ultimo ? `em ${formatDate(ultimo.data)}` : 'Medida ainda não registrada'}</Text>
+          <View style={styles.summaryDivider} />
+          {renderVariacao('Desde a última avaliação', penultimo && ultimo ? ultimo.value - penultimo.value : null)}
+          {renderVariacao(primeiro && metricPoints.length > 2 ? `Desde o início (${formatDate(primeiro.data)})` : 'Desde o início', primeiro && ultimo && metricPoints.length > 2 ? ultimo.value - primeiro.value : null)}
+          {textoRitmo ? (
+            <Text style={styles.summaryRitmo}>
+              {textoRitmo === 'sem mudança'
+                ? `Ritmo médio: estável em ${Math.max(1, Math.round(meses))} ${Math.round(meses) <= 1 ? 'mês' : 'meses'}`
+                : `Ritmo médio: cerca de ${textoRitmo} por mês (${Math.max(1, Math.round(meses))} ${Math.round(meses) <= 1 ? 'mês' : 'meses'})`}
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.chartCard}>
           <Text style={styles.chartTitle}>{`${selectedMetricLabel} ao longo do tempo`}</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={[styles.chartScrollContent, { width: chartWidth }]}>
-            <LineChart
-              data={metricSeries}
-              width={chartWidth}
-              height={220}
-              color={COLORS.blue}
-              thickness={2}
-              spacing={Math.max(36, chartWidth / Math.max(metricSeries.length, 1) - 12)}
-              initialSpacing={20}
-              endSpacing={20}
-              maxValue={Math.max(...metricSeries.map((point) => point.value), 0) * 1.1 || 1}
-              noOfSections={4}
-              rulesColor="transparent"
-              xAxisColor="transparent"
-              yAxisColor="transparent"
-              xAxisLabelTextStyle={styles.chartAxisText}
-              yAxisTextStyle={styles.chartAxisText}
-              dataPointsColor={COLORS.blue}
-              dataPointsRadius={3}
-              areaChart
-              startFillColor={COLORS.blue}
-              endFillColor={COLORS.white}
-              startOpacity={0.16}
-              endOpacity={0.02}
-              curved={false}
-              pointerConfig={{
-                activatePointersInstantlyOnTouch: true,
-                pointerStripColor: 'transparent',
-                pointerStripWidth: 0,
-                pointerLabelComponent: (items: { value?: number; label?: string }[]) => {
-                  const point = items?.[0];
-                  return (
-                    <View style={styles.pointerLabel}>
-                      <Text style={styles.pointerLabelText}>{`${selectedMetricLabel}: ${point?.value ?? '—'}`}</Text>
-                      <Text style={styles.pointerLabelText}>{point?.label ?? '—'}</Text>
-                    </View>
-                  );
-                },
-              }}
-            />
-          </ScrollView>
+          {escala ? (
+            <>
+              <Text style={styles.chartHint}>Toque e arraste no gráfico para ver cada avaliação.</Text>
+              <View accessible accessibilityLabel={`${selectedMetricLabel} ao longo do tempo. ${resumoAcessivel}`}>
+                <LineChart
+                  key={selectedMetric}
+                  data={metricSeries}
+                  width={larguraGrafico}
+                  height={200}
+                  spacing={espacamento}
+                  initialSpacing={18}
+                  endSpacing={18}
+                  scrollToEnd
+                  color={COLORS.blue}
+                  thickness={2}
+                  yAxisOffset={escala.inicio}
+                  stepValue={escala.passo}
+                  noOfSections={escala.secoes}
+                  maxValue={escala.passo * escala.secoes}
+                  formatYLabel={(label: string) => formatarNumero(Number(label), casasEixo)}
+                  yAxisLabelWidth={44}
+                  rulesType="solid"
+                  rulesColor="#E4E7EA"
+                  rulesThickness={1}
+                  xAxisColor={COLORS.border}
+                  yAxisColor="transparent"
+                  xAxisLabelTextStyle={styles.chartAxisText}
+                  yAxisTextStyle={styles.chartAxisText}
+                  dataPointsColor={COLORS.blue}
+                  dataPointsRadius={4}
+                  textColor={COLORS.text}
+                  textFontSize={12}
+                  textShiftY={-8}
+                  textShiftX={-10}
+                  areaChart
+                  startFillColor={COLORS.blue}
+                  endFillColor={COLORS.white}
+                  startOpacity={0.14}
+                  endOpacity={0.02}
+                  isAnimated={!reduceMotion}
+                  animationDuration={600}
+                  pointerConfig={{
+                    activatePointersInstantlyOnTouch: true,
+                    pointerStripColor: '#B8C4CF',
+                    pointerStripWidth: 1,
+                    pointerColor: COLORS.yellow,
+                    radius: 6,
+                    pointerLabelWidth: 136,
+                    pointerLabelHeight: 64,
+                    autoAdjustPointerLabelPosition: true,
+                    pointerLabelComponent: (items: PontoGrafico[]) => {
+                      const point = items?.[0];
+                      return (
+                        <View style={styles.pointerLabel}>
+                          <Text style={styles.pointerLabelDate}>{point ? formatDate(point.data) : '—'}</Text>
+                          <Text style={styles.pointerLabelText}>{point?.textoValor ?? '—'}</Text>
+                          <Text style={styles.pointerLabelSub}>{point?.textoDiferenca ?? ''}</Text>
+                        </View>
+                      );
+                    },
+                  }}
+                />
+              </View>
+            </>
+          ) : (
+            <Text style={styles.comparisonEmptyText}>{`${selectedMetricLabel} foi registrado em menos de duas avaliações. Escolha outra métrica ou registre uma nova avaliação.`}</Text>
+          )}
         </View>
 
+        <Pressable accessibilityRole="button" style={styles.compareButtonSecondary} onPress={() => setActiveTab('historico')}>
+          <MaterialIcons name="compare-arrows" size={20} color={COLORS.blue} />
+          <Text style={styles.compareButtonSecondaryText}>Comparar avaliações</Text>
+        </Pressable>
         {renderComparisonTable()}
 
         </ScrollView>
@@ -513,39 +690,75 @@ export default function MedidasAlunoScreen() {
     );
   };
 
-  const renderHistoricoTab = () => (
+  const renderHistoryItem = (item: Medida) => {
+    const isSelected = selectedHistoryIds.includes(item.id);
+    const isActive = selectedHistoryMeasure?.id === item.id;
+    return (
+      <View key={item.id} style={[styles.historyItem, isActive && styles.historyItemSelected]}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Abrir avaliação de ${formatDate(item.data_avaliacao)}`} style={styles.historyItemMain} onPress={() => setSelectedHistoryId(item.id)}>
+          <View style={styles.historyItemText}>
+            <Text style={styles.historyDate}>{formatDate(item.data_avaliacao)}</Text>
+            <Text style={styles.historyMeta}>{isActive ? 'Avaliação aberta' : 'Tocar para ver detalhes'}</Text>
+          </View>
+        </Pressable>
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: isSelected }}
+          accessibilityLabel={`${isSelected ? 'Desmarcar' : 'Marcar'} avaliação de ${formatDate(item.data_avaliacao)}`}
+          onPress={() => toggleHistorySelection(item.id)}
+          style={styles.checkboxButton}
+        >
+          <MaterialIcons name={isSelected ? 'check-box' : 'check-box-outline-blank'} size={26} color={isSelected ? COLORS.yellow : COLORS.muted} />
+        </Pressable>
+      </View>
+    );
+  };
+
+  const renderHistoricoTab = () => historicoMedidas.length === 0 ? renderSemAvaliacao('history', 'Histórico vazio', 'Cada avaliação registrada fica guardada aqui, organizada por data.') : (
     <>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: FAB_SPACE }]}>
       <Text style={styles.studentName}>{aluno?.nome ?? 'Aluno'}</Text>
       <View style={styles.historyHeader}>
-        <View>
-          <Text style={styles.historyTitle}>Histórico de avaliações</Text>
-          <Text style={styles.historyMeta}>Marque duas ou mais avaliações para comparar.</Text>
-        </View>
-        <Text style={styles.selectionCount}>{selectedHistoryIds.length} selecionada{selectedHistoryIds.length === 1 ? '' : 's'}</Text>
+        <Text style={styles.historyTitle}>Histórico de avaliações</Text>
+        <Text style={styles.historyMeta}>Marque duas ou mais avaliações para comparar.</Text>
+        <Tag
+          style={styles.selectionTag}
+          tone={selectedHistoryIds.length ? 'yellow' : 'neutral'}
+          icon={selectedHistoryIds.length ? 'check-box' : 'check-box-outline-blank'}
+          label={`${selectedHistoryIds.length} selecionada${selectedHistoryIds.length === 1 ? '' : 's'}`}
+        />
       </View>
       <View style={styles.historyCard}>
-        {historicoMedidas.map((item) => {
-          const isSelected = selectedHistoryIds.includes(item.id);
-          const isActive = selectedHistoryMeasure?.id === item.id;
-          return (
-            <View key={item.id} style={[styles.historyItem, isActive && styles.historyItemSelected]}>
-              <Pressable style={styles.historyItemMain} onPress={() => setSelectedHistoryId(item.id)}>
-                <View style={styles.historyItemText}>
-                  <Text style={styles.historyDate}>{formatDate(item.data_avaliacao)}</Text>
-                  <Text style={styles.historyMeta}>{isActive ? 'Avaliação aberta' : 'Tocar para ver detalhes'}</Text>
-                </View>
-              </Pressable>
-              <Pressable
-                accessibilityLabel={`${isSelected ? 'Desmarcar' : 'Marcar'} avaliação de ${formatDate(item.data_avaliacao)}`}
-                onPress={() => toggleHistorySelection(item.id)}
-                style={styles.checkboxButton}
-              >
-                <MaterialIcons name={isSelected ? 'check-box' : 'check-box-outline-blank'} size={26} color={isSelected ? COLORS.yellow : COLORS.muted} />
-              </Pressable>
-            </View>
-          );
-        })}
+        {historicoPorAno.length <= 1
+          ? historicoMedidas.map(renderHistoryItem)
+          : historicoPorAno.map(({ ano, itens }) => {
+            const aberto = anosAbertos.includes(ano);
+            const marcadas = itens.filter((item) => selectedHistoryIds.includes(item.id)).length;
+            const resumo = `${itens.length} avaliaç${itens.length === 1 ? 'ão' : 'ões'}${marcadas ? ` · ${marcadas} marcada${marcadas === 1 ? '' : 's'}` : ''}`;
+            return (
+              <Animated.View key={ano} layout={LinearTransition.duration(MOTION.base).reduceMotion(ReduceMotion.System)}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: aberto }}
+                  accessibilityLabel={`Avaliações de ${ano}, ${resumo}`}
+                  onPress={() => toggleAno(ano)}
+                  style={[styles.yearFolder, aberto && styles.yearFolderOpen]}>
+                  <MaterialIcons name={aberto ? 'folder-open' : 'folder'} size={22} color={aberto ? COLORS.blue : COLORS.muted} />
+                  <Text style={[styles.yearFolderTitle, aberto && styles.yearFolderTitleOpen]}>{ano}</Text>
+                  <Text style={styles.yearFolderMeta}>{resumo}</Text>
+                  <MaterialIcons name={aberto ? 'expand-less' : 'expand-more'} size={22} color={aberto ? COLORS.blue : COLORS.muted} />
+                </Pressable>
+                {aberto ? (
+                  <Animated.View
+                    entering={FadeIn.duration(MOTION.base).reduceMotion(ReduceMotion.System)}
+                    exiting={FadeOut.duration(MOTION.fast).reduceMotion(ReduceMotion.System)}
+                    style={styles.yearFolderItems}>
+                    {itens.map(renderHistoryItem)}
+                  </Animated.View>
+                ) : null}
+              </Animated.View>
+            );
+          })}
       </View>
       {selectedHistoryIds.length >= 2 && (
         <View style={styles.comparisonFilterCard}>
@@ -611,34 +824,40 @@ export default function MedidasAlunoScreen() {
             <MaterialIcons name="arrow-back" size={24} color={COLORS.blue} />
           </Pressable>
           <Text style={styles.headerTitle}>Medidas</Text>
-          <Pressable accessibilityLabel="Adicionar avaliação" onPress={openMeasureForm} style={styles.headerButton}>
-            <MaterialIcons name="add" size={26} color={COLORS.blue} />
-          </Pressable>
+          {/* Espaço do mesmo tamanho do botão voltar, para o título ficar centralizado. */}
+          <View style={styles.headerButton} />
         </View>
         {loading ? <ActivityIndicator color={COLORS.blue} size="large" style={styles.loader} /> : error ? (
           <View style={styles.stateBox}><Text style={styles.stateTitle}>{error}</Text></View>
         ) : (
           <>
-            <View style={styles.tabBar}>
+            <View accessibilityRole="tablist" style={styles.tabBar}>
               {(['atual', 'evolucao', 'historico'] as TabType[]).map((tab) => {
                 const isActive = activeTab === tab;
+                const label = tab === 'atual' ? 'Atual' : tab === 'evolucao' ? 'Evolução' : 'Histórico';
                 return (
                   <Pressable
                     key={tab}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: isActive }}
+                    accessibilityLabel={label}
                     onPress={() => setActiveTab(tab)}
                     style={[styles.tabButton, isActive && styles.tabButtonActive]}
                   >
-                    <Text style={[styles.tabButtonText, isActive && styles.tabButtonTextActive]}>
-                      {tab === 'atual' ? 'Atual' : tab === 'evolucao' ? 'Evolução' : 'Histórico'}
-                    </Text>
+                    <Text style={[styles.tabButtonText, isActive && styles.tabButtonTextActive]}>{label}</Text>
                   </Pressable>
                 );
               })}
             </View>
-            {activeTab === 'atual' ? renderAtualTab() : activeTab === 'evolucao' ? renderEvolucaoTab() : renderHistoricoTab()}
+            <FadeInView key={activeTab} style={styles.tabContent}>
+              {activeTab === 'atual' ? renderAtualTab() : activeTab === 'evolucao' ? renderEvolucaoTab() : renderHistoricoTab()}
+            </FadeInView>
           </>
         )}
       </SafeAreaView>
+      {!loading && !error && historicoMedidas.length > 0 ? (
+        <Fab accessibilityLabel="Registrar nova avaliação" label="Nova avaliação" onPress={openMeasureForm} bottomOffset={insets.bottom} />
+      ) : null}
       <Modal animationType="slide" transparent visible={formVisible} onRequestClose={() => setFormVisible(false)}>
         <KeyboardAvoidingView behavior="padding" style={styles.modalBackdrop}>
           <View style={[styles.modalCard, { paddingBottom: 30 + insets.bottom }]}>
@@ -670,13 +889,13 @@ export default function MedidasAlunoScreen() {
 }
 
 const styles = StyleSheet.create({
-  chartAxisText: { color: COLORS.muted, fontSize: 10 },
-  chartCard: { backgroundColor: COLORS.white, borderRadius: 12, marginBottom: 18, padding: 18 },
-  chartScrollContent: { paddingRight: 8 },
+  chartAxisText: { color: COLORS.muted, fontSize: 11 },
+  chartCard: { backgroundColor: COLORS.white, borderRadius: 12, marginBottom: 18, padding: 16 },
+  chartHint: { color: COLORS.muted, fontSize: 13, marginBottom: 14, marginTop: -6 },
   chartTitle: { color: COLORS.text, fontSize: 18, fontWeight: '700', marginBottom: 12 },
   checkboxButton: { alignItems: 'center', height: 44, justifyContent: 'center', marginLeft: 8, width: 44 },
-  compareButton: { alignItems: 'center', backgroundColor: COLORS.blue, borderRadius: 8, flexDirection: 'row', justifyContent: 'center', marginBottom: 18, minHeight: 44, paddingHorizontal: 16, paddingVertical: 10 },
-  compareButtonText: { color: COLORS.white, fontSize: 15, fontWeight: '700', marginLeft: 8 },
+  compareButtonSecondary: { alignItems: 'center', backgroundColor: COLORS.white, borderColor: COLORS.blue, borderRadius: 8, borderWidth: 1.5, flexDirection: 'row', justifyContent: 'center', marginBottom: 18, minHeight: 44, paddingHorizontal: 16, paddingVertical: 10 },
+  compareButtonSecondaryText: { color: COLORS.blue, fontSize: 15, fontWeight: '700', marginLeft: 8 },
   comparisonFilterCard: { backgroundColor: COLORS.white, borderRadius: 12, marginTop: 18, padding: 16 },
   comparisonFilterHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   comparisonFilterHint: { color: COLORS.muted, fontSize: 12, marginTop: 10 },
@@ -728,7 +947,8 @@ const styles = StyleSheet.create({
   headerTitle: { color: COLORS.blue, fontSize: 18, fontWeight: '700' },
   historyCard: { backgroundColor: COLORS.white, borderRadius: 12, padding: 16 },
   historyDate: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
-  historyHeader: { alignItems: 'flex-end', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+  historyHeader: { marginBottom: 12, marginTop: 4 },
+  selectionTag: { marginTop: 10 },
   historyItem: { alignItems: 'center', borderBottomColor: COLORS.border, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', justifyContent: 'space-between', minHeight: 64, paddingBottom: 8, paddingTop: 8 },
   historyItemMain: { flex: 1, paddingVertical: 8 },
   historyItemSelected: { backgroundColor: '#EEF5FF', borderRadius: 10, paddingHorizontal: 10 },
@@ -757,8 +977,26 @@ const styles = StyleSheet.create({
   modalCloseButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   modalHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 18 },
   modalTitle: { color: COLORS.text, fontSize: 22, fontWeight: '700' },
-  pointerLabel: { backgroundColor: 'rgba(23, 33, 43, 0.85)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 },
-  pointerLabelText: { color: COLORS.white, fontSize: 11 },
+  pointerLabel: { backgroundColor: COLORS.text, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7 },
+  pointerLabelDate: { color: '#C9D3DC', fontSize: 11 },
+  pointerLabelSub: { color: '#C9D3DC', fontSize: 11, marginTop: 1 },
+  pointerLabelText: { color: COLORS.white, fontSize: 14, fontWeight: '700', marginTop: 1 },
+  studentHeading: { alignItems: 'center', flexDirection: 'row', gap: 12 },
+  studentNameInline: { flex: 1, fontSize: 26 },
+  summaryDivider: { backgroundColor: '#EBD9B4', height: StyleSheet.hairlineWidth, marginVertical: 12 },
+  summaryLabel: { color: COLORS.yellowText, fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  summaryRitmo: { color: COLORS.yellowText, fontSize: 13, lineHeight: 18, marginTop: 10 },
+  tabContent: { flex: 1 },
+  variacaoLabel: { color: COLORS.yellowText, flex: 1, fontSize: 14 },
+  variacaoRow: { alignItems: 'center', flexDirection: 'row', minHeight: 30 },
+  variacaoValue: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
+  variacaoValueWrap: { alignItems: 'center', flexDirection: 'row', gap: 2 },
+  yearFolder: { alignItems: 'center', borderColor: COLORS.border, borderRadius: 10, borderWidth: 1, flexDirection: 'row', gap: 8, marginTop: 8, minHeight: 48, paddingHorizontal: 12 },
+  yearFolderItems: { paddingLeft: 10 },
+  yearFolderMeta: { color: COLORS.muted, flex: 1, fontSize: 13, textAlign: 'right' },
+  yearFolderOpen: { backgroundColor: COLORS.blueLight, borderColor: COLORS.blueLight },
+  yearFolderTitle: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
+  yearFolderTitleOpen: { color: COLORS.blueDark },
   safeArea: { backgroundColor: COLORS.background, flex: 1 },
   selectionCount: { color: COLORS.blue, fontSize: 12, fontWeight: '700', marginLeft: 12, textAlign: 'right' },
   saveButton: { alignItems: 'center', backgroundColor: COLORS.blue, borderRadius: 8, height: 50, justifyContent: 'center', marginTop: 8 },

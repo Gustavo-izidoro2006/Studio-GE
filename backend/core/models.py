@@ -5,6 +5,30 @@ from django.utils import timezone
 from decimal import Decimal
 
 
+class Perfil(models.Model):
+	"""Contexto de trabalho do instrutor (specs/perfis.md). São três, fixos; o nome pode ser editado."""
+	TIPO_CHOICES = [
+		('academia', 'Academia'),
+		('personal', 'Personal'),
+		('pessoal', 'Pessoal'),
+	]
+
+	tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, unique=True)
+	nome = models.CharField(max_length=100)
+
+	class Meta:
+		ordering = ['id']
+
+	def __str__(self):
+		return self.nome
+
+
+def perfil_padrao():
+	"""Perfil usado quando nenhum é informado (compatível com o APK 0.1.1): Academia."""
+	perfil, _ = Perfil.objects.get_or_create(tipo='academia', defaults={'nome': 'Academia'})
+	return perfil.pk
+
+
 class Aluno(models.Model):
 	TURNO_CHOICES = [
 		('manha', 'Manhã'),
@@ -23,6 +47,7 @@ class Aluno(models.Model):
 		validators=[MinValueValidator(1), MaxValueValidator(28)],
 	)
 	ativo = models.BooleanField(default=True)
+	perfil = models.ForeignKey(Perfil, on_delete=models.PROTECT, default=perfil_padrao, related_name='alunos')
 
 	def clean(self):
 		if self.valor_mensalidade is not None and self.dia_vencimento is None:
@@ -56,6 +81,7 @@ class Exercicio(models.Model):
 	nome = models.CharField(max_length=255)
 	grupo_muscular = models.CharField(max_length=255, blank=True)
 	descricao = models.TextField(blank=True)
+	perfil = models.ForeignKey(Perfil, on_delete=models.PROTECT, default=perfil_padrao, related_name='exercicios')
 
 
 class Treino(models.Model):
@@ -80,6 +106,8 @@ class Mensalidade(models.Model):
 	valor = models.DecimalField(max_digits=8, decimal_places=2)
 	data_vencimento = models.DateField()
 	data_pagamento = models.DateTimeField(blank=True, null=True)
+	# A mensalidade guarda o próprio perfil: o histórico financeiro continua no perfil certo mesmo sem o aluno.
+	perfil = models.ForeignKey(Perfil, on_delete=models.PROTECT, default=perfil_padrao, related_name='mensalidades')
 
 	class Meta:
 		ordering = ['-competencia', 'aluno_nome']
@@ -94,6 +122,8 @@ class Mensalidade(models.Model):
 	def save(self, *args, **kwargs):
 		if not self.aluno_nome and self.aluno:
 			self.aluno_nome = self.aluno.nome
+		if self.aluno and self._state.adding:
+			self.perfil_id = self.aluno.perfil_id
 		super().save(*args, **kwargs)
 
 	@property
@@ -129,6 +159,7 @@ class Despesa(models.Model):
 	categoria = models.CharField(max_length=20, choices=CATEGORIA_CHOICES)
 	valor = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
 	data = models.DateField()
+	perfil = models.ForeignKey(Perfil, on_delete=models.PROTECT, default=perfil_padrao, related_name='despesas')
 
 	class Meta:
 		ordering = ['-data']

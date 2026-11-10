@@ -18,3 +18,9 @@ function enderecoDoComputador() {
 export const API_ROOT: string = __DEV__
   ? process.env.EXPO_PUBLIC_API_URL || enderecoDoComputador()
   : API_NUVEM;
+
+/** Acrescenta o perfil ativo à URL (?perfil=<id>). Sem perfil, a API usa Academia (specs/perfis.md). */
+export function comPerfil(url: string, perfilId: number | null | undefined) {
+  if (!perfilId) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}perfil=${perfilId}`;
+}
