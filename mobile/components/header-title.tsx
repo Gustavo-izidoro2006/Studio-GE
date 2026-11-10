@@ -19,7 +19,7 @@ export function HeaderTitle({ title, mostrarPerfil = true }: { title: string; mo
           hitSlop={{ top: 6, bottom: 6, left: 12, right: 12 }}
           onPress={() => router.navigate('/perfil')}
           style={styles.chip}>
-          <MaterialIcons name={PERFIL_ICON[perfil.tipo]} size={13} color={COLORS.blueDark} />
+          <MaterialIcons name={PERFIL_ICON[perfil.tipo]} size={13} color={COLORS.blue} />
           <Text style={styles.chipText} numberOfLines={1}>{perfil.nome}</Text>
         </Pressable>
       ) : null}
@@ -29,7 +29,7 @@ export function HeaderTitle({ title, mostrarPerfil = true }: { title: string; mo
 
 const styles = StyleSheet.create({
   wrap: { alignItems: 'center', maxWidth: 240 },
-  title: { color: COLORS.blue, fontSize: 18, fontWeight: '700' },
-  chip: { alignItems: 'center', backgroundColor: COLORS.blueLight, borderRadius: RADIUS.pill, flexDirection: 'row', gap: 4, marginTop: 2, maxWidth: 220, paddingHorizontal: 8, paddingVertical: 1 },
-  chipText: { color: COLORS.blueDark, fontSize: 12, fontWeight: '600' },
+  title: { color: COLORS.white, fontSize: 18, fontWeight: '700' },
+  chip: { alignItems: 'center', backgroundColor: COLORS.lime, borderRadius: RADIUS.pill, flexDirection: 'row', gap: 4, marginTop: 2, maxWidth: 220, paddingHorizontal: 8, paddingVertical: 1 },
+  chipText: { color: COLORS.blue, fontSize: 12, fontWeight: '700' },
 });

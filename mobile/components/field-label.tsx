@@ -19,7 +19,7 @@ export function FieldLabel({ children, style, required = false }: Props) {
 
 const styles = StyleSheet.create({
   required: {
-    color: '#7A828A',
+    color: '#5F6B76',
     fontSize: 12,
     fontWeight: '400',
   },

@@ -28,7 +28,7 @@ export function Fab({ accessibilityLabel, onPress, label, icon = 'add', style, b
       onPress={onPress}
       pressedScale={0.94}
       style={[styles.fab, label ? styles.extended : styles.round, { bottom: 22 + bottomOffset }, style]}>
-      <MaterialIcons name={icon} size={label ? 22 : 28} color={COLORS.white} />
+      <MaterialIcons name={icon} size={label ? 22 : 28} color={COLORS.blue} />
       {label ? <Text style={styles.label}>{label}</Text> : null}
     </PressableScale>
   );
@@ -38,7 +38,7 @@ const styles = StyleSheet.create({
   fab: {
     ...SHADOW.floating,
     alignItems: 'center',
-    backgroundColor: COLORS.blue,
+    backgroundColor: COLORS.lime,
     flexDirection: 'row',
     justifyContent: 'center',
     position: 'absolute',
@@ -46,5 +46,5 @@ const styles = StyleSheet.create({
   },
   round: { borderRadius: 28, height: 56, width: 56 },
   extended: { borderRadius: RADIUS.pill, gap: 8, height: 52, paddingHorizontal: 20 },
-  label: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
+  label: { color: COLORS.blue, fontSize: 15, fontWeight: '700' },
 });

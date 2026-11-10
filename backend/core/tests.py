@@ -238,6 +238,14 @@ class PerfisAPITests(TestCase):
 	def test_perfil_inexistente_da_400(self):
 		self.assertEqual(self.client.get('/api/alunos/?perfil=999').status_code, 400)
 
+	def test_avaliacoes_de_um_aluno_ignoram_o_perfil_ativo(self):
+		from .models import Medida
+		aluno = Aluno.objects.create(nome='Cliente', perfil=self.personal)
+		Medida.objects.create(aluno=aluno, data_avaliacao=timezone.localdate(), peso=Decimal('70'))
+		resposta = self.client.get(f'/api/medidas/?aluno={aluno.id}&perfil={self.academia.id}')
+		self.assertEqual(len(resposta.json()), 1)
+		self.assertEqual(len(self.client.get(f'/api/medidas/?perfil={self.academia.id}').json()), 0)
+
 	def test_detalhe_por_id_funciona_em_qualquer_perfil(self):
 		aluno = Aluno.objects.create(nome='Cliente', perfil=self.personal)
 		self.assertEqual(self.client.get(f'/api/alunos/{aluno.id}/').status_code, 200)

@@ -25,8 +25,7 @@ import { FieldLabel } from '@/components/field-label';
 import { FadeInView } from '@/components/motion';
 import { Tag } from '@/components/tag';
 import { DateInput } from '@/components/date-input';
-import { API_ROOT, comPerfil } from '@/constants/api';
-import { usePerfil } from '@/contexts/perfil';
+import { API_ROOT } from '@/constants/api';
 import { converterDataParaISO, dataHojeBrasileira } from '@/utils/date';
 import { COLORS, MOTION } from '@/constants/ui';
 
@@ -178,6 +177,11 @@ function escalaDoGrafico(values: number[]) {
   return { inicio, passo, secoes: Math.max(1, Math.round((fim - inicio) / passo)) };
 }
 
+// Último ponto (valor atual): limão com anel marinho.
+function PontoAtual() {
+  return <View style={{ backgroundColor: COLORS.lime, borderColor: COLORS.blue, borderRadius: 7, borderWidth: 2.5, height: 14, width: 14 }} />;
+}
+
 type PontoGrafico = {
   value: number;
   label: string;
@@ -185,8 +189,7 @@ type PontoGrafico = {
   textoValor: string;
   textoDiferenca: string;
   dataPointText?: string;
-  dataPointColor?: string;
-  dataPointRadius?: number;
+  customDataPoint?: () => React.ReactElement;
 };
 
 type TabType = 'atual' | 'evolucao' | 'historico';
@@ -225,7 +228,6 @@ const metricCategories: { title: string; options: { key: MetricKey; label: strin
 export default function MedidasAlunoScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { perfilId } = usePerfil();
   const [aluno, setAluno] = useState<Aluno | null>(null);
   const [medida, setMedida] = useState<Medida | null>(null);
   const [historicoMedidas, setHistoricoMedidas] = useState<Medida[]>([]);
@@ -264,7 +266,8 @@ export default function MedidasAlunoScreen() {
     try {
       const [alunoResponse, medidasResponse] = await Promise.all([
         fetch(`${API_ROOT}/alunos/${id}/`),
-        fetch(comPerfil(`${API_ROOT}/medidas/?aluno=${id}`, perfilId)),
+        // Avaliações seguem o perfil do aluno: não depende do perfil ativo.
+        fetch(`${API_ROOT}/medidas/?aluno=${id}`),
       ]);
       if (!alunoResponse.ok || !medidasResponse.ok) throw new Error('Não foi possível carregar as medidas.');
       const alunoData: Aluno = await alunoResponse.json();
@@ -289,7 +292,7 @@ export default function MedidasAlunoScreen() {
     } finally {
       setLoading(false);
     }
-  }, [id, perfilId]);
+  }, [id]);
 
   function toggleHistorySelection(measureId: number) {
     setSelectedHistoryIds((current) => current.includes(measureId) ? current.filter((selectedId) => selectedId !== measureId) : [...current, measureId]);
@@ -369,7 +372,7 @@ export default function MedidasAlunoScreen() {
       textoValor: formatarValor(point.value, selectedMetric),
       textoDiferenca: previous ? formatarDiferenca(point.value - previous.value, selectedMetric) : 'primeira avaliação',
       // Número só no último ponto (o valor atual); os demais aparecem ao tocar e na tabela.
-      ...(isLast ? { dataPointText: formatarNumero(point.value, casasDecimais(selectedMetric)), dataPointColor: COLORS.yellow, dataPointRadius: 6 } : {}),
+      ...(isLast ? { dataPointText: formatarNumero(point.value, casasDecimais(selectedMetric)), customDataPoint: PontoAtual } : {}),
     };
   });
 
@@ -430,10 +433,8 @@ export default function MedidasAlunoScreen() {
 
   const renderMeasureDetails = (measure: Medida | null, showBirthDate = true) => (
     <>
-      <Text style={styles.studentName}>{aluno?.nome ?? 'Aluno'}</Text>
-      <Text style={styles.lastEvaluation}>
-        {measure ? formatDate(measure.data_avaliacao) : 'Vazio'}
-      </Text>
+      <Text style={styles.detailTitle}>{measure ? `Avaliação de ${formatDate(measure.data_avaliacao)}` : 'Avaliação'}</Text>
+      {measure ? <Text style={styles.lastEvaluation}>{haQuantoTempo(measure.data_avaliacao)}</Text> : null}
       <View style={styles.imcCard}>
         <View>
           <Text style={styles.imcLabel}>IMC</Text>
@@ -541,9 +542,13 @@ export default function MedidasAlunoScreen() {
     const escala = metricSeries.length >= 2 ? escalaDoGrafico(metricSeries.map((point) => point.value)) : null;
     const casasEixo = escala ? (escala.passo < 0.1 ? 2 : escala.passo < 1 ? 1 : 0) : 0;
     // Até 6 avaliações o gráfico cabe na tela; com mais, rola para o lado (abrindo no fim).
-    const larguraGrafico = Math.max(220, windowWidth - 40 - 32 - 44);
-    const pontosVisiveis = Math.min(Math.max(metricSeries.length, 2), 6);
-    const espacamento = (larguraGrafico - 36) / (pontosVisiveis - 1);
+    // A biblioteca desenha a coluna do eixo (44) + a largura informada, e corta o que passar da largura.
+    // Tudo precisa caber no cartão: tela − margens da tela (40) − margens do cartão (32).
+    const larguraGrafico = Math.max(200, windowWidth - 40 - 32 - 44 - 6);
+    // Até 6 avaliações cabe tudo na tela; com mais, espaçamento fixo e rolagem (abrindo no fim).
+    const cabeNaTela = metricSeries.length <= 6;
+    // Primeiro ponto após a folga inicial (24); o último para 36px antes do fim, para o ponto e o número caberem.
+    const espacamento = cabeNaTela ? (larguraGrafico - 24 - 36) / Math.max(metricSeries.length - 1, 1) : 56;
     const resumoAcessivel = metricSeries.map((point) => `${formatDate(point.data)}: ${point.textoValor}`).join('; ');
 
     return (
@@ -587,9 +592,11 @@ export default function MedidasAlunoScreen() {
                   width={larguraGrafico}
                   height={200}
                   spacing={espacamento}
-                  initialSpacing={18}
-                  endSpacing={18}
-                  scrollToEnd
+                  initialSpacing={24}
+                  endSpacing={36}
+                  rulesLength={larguraGrafico}
+                  xAxisLength={larguraGrafico}
+                  scrollToEnd={!cabeNaTela}
                   color={COLORS.blue}
                   thickness={2}
                   yAxisOffset={escala.inicio}
@@ -622,7 +629,7 @@ export default function MedidasAlunoScreen() {
                     activatePointersInstantlyOnTouch: true,
                     pointerStripColor: '#B8C4CF',
                     pointerStripWidth: 1,
-                    pointerColor: COLORS.yellow,
+                    pointerColor: COLORS.blue,
                     radius: 6,
                     pointerLabelWidth: 136,
                     pointerLabelHeight: 64,
@@ -677,7 +684,7 @@ export default function MedidasAlunoScreen() {
                         }}
                       >
                         <Text style={[styles.metricOptionText, isActive && styles.metricOptionTextActive]}>{option.label}</Text>
-                        {isActive && <MaterialIcons name="check" size={20} color={COLORS.yellow} />}
+                        {isActive && <MaterialIcons name="check" size={20} color={COLORS.blue} />}
                       </Pressable>
                     );
                   })}
@@ -708,7 +715,7 @@ export default function MedidasAlunoScreen() {
           onPress={() => toggleHistorySelection(item.id)}
           style={styles.checkboxButton}
         >
-          <MaterialIcons name={isSelected ? 'check-box' : 'check-box-outline-blank'} size={26} color={isSelected ? COLORS.yellow : COLORS.muted} />
+          <MaterialIcons name={isSelected ? 'check-box' : 'check-box-outline-blank'} size={26} color={isSelected ? COLORS.blue : COLORS.muted} />
         </Pressable>
       </View>
     );
@@ -770,7 +777,7 @@ export default function MedidasAlunoScreen() {
               </Text>
             </View>
             <Pressable accessibilityLabel="Escolher métricas da comparação" onPress={() => setComparisonMetricSelectorVisible(true)} style={styles.filterButton}>
-              <MaterialIcons name="tune" size={20} color={COLORS.yellow} />
+              <MaterialIcons name="tune" size={20} color={COLORS.blue} />
             </Pressable>
           </View>
           <Text style={styles.comparisonFilterHint}>Sem filtro, todas as métricas entram na comparação.</Text>
@@ -800,7 +807,7 @@ export default function MedidasAlunoScreen() {
                   return (
                     <Pressable key={option.key} style={styles.metricOption} onPress={() => toggleComparisonMetric(option.key)}>
                       <Text style={styles.metricOptionText}>{option.label}</Text>
-                      <MaterialIcons name={isActive ? 'check-box' : 'check-box-outline-blank'} size={22} color={isActive ? COLORS.yellow : COLORS.muted} />
+                      <MaterialIcons name={isActive ? 'check-box' : 'check-box-outline-blank'} size={22} color={isActive ? COLORS.blue : COLORS.muted} />
                     </Pressable>
                   );
                 })}
@@ -818,10 +825,10 @@ export default function MedidasAlunoScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-        <View style={styles.header}>
+      <SafeAreaView edges={['bottom']} style={styles.safeArea}>
+        <View style={[styles.header, { height: 56 + insets.top, paddingTop: insets.top }]}>
           <Pressable accessibilityLabel="Voltar" onPress={() => router.back()} style={styles.headerButton}>
-            <MaterialIcons name="arrow-back" size={24} color={COLORS.blue} />
+            <MaterialIcons name="arrow-back" size={24} color={COLORS.white} />
           </Pressable>
           <Text style={styles.headerTitle}>Medidas</Text>
           {/* Espaço do mesmo tamanho do botão voltar, para o título ficar centralizado. */}
@@ -902,7 +909,7 @@ const styles = StyleSheet.create({
   comparisonFilterText: { color: COLORS.blue, fontSize: 14, fontWeight: '700', marginTop: 4 },
   comparisonFilterTitle: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
   comparisonFilterTitleBlock: { flex: 1 },
-  comparisonCard: { backgroundColor: COLORS.paleYellow, borderRadius: 12, marginBottom: 18, padding: 18 },
+  comparisonCard: { backgroundColor: COLORS.limeLight, borderRadius: 12, marginBottom: 18, padding: 18 },
   comparisonEmptyCard: { backgroundColor: COLORS.white, borderRadius: 12, marginBottom: 18, padding: 18 },
   comparisonEmptyText: { color: COLORS.muted, fontSize: 14, marginBottom: 14, marginTop: 6 },
   comparisonEmptyTitle: { color: COLORS.text, fontSize: 17, fontWeight: '700' },
@@ -937,26 +944,26 @@ const styles = StyleSheet.create({
   fieldLabel: { color: COLORS.text, flex: 1, fontSize: 15, marginLeft: 12 },
   fieldRow: { alignItems: 'center', borderBottomColor: COLORS.border, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', minHeight: 54 },
   fieldValue: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
-  filterButton: { alignItems: 'center', backgroundColor: COLORS.paleYellow, borderRadius: 8, height: 44, justifyContent: 'center', width: 44 },
+  filterButton: { alignItems: 'center', backgroundColor: COLORS.blueLight, borderRadius: 8, height: 44, justifyContent: 'center', width: 44 },
   fieldsCard: { backgroundColor: COLORS.white, borderRadius: 10, paddingHorizontal: 16 },
   formHint: { color: COLORS.muted, fontSize: 14, marginBottom: 16 },
   formInput: { borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, color: COLORS.text, fontSize: 16, height: 46, marginBottom: 14, paddingHorizontal: 14 },
   formLabel: { color: COLORS.text, fontSize: 14, fontWeight: '600', marginBottom: 7 },
-  header: { alignItems: 'center', backgroundColor: COLORS.white, borderBottomColor: COLORS.border, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', height: 56, justifyContent: 'space-between' },
+  header: { alignItems: 'center', backgroundColor: COLORS.blue, flexDirection: 'row', justifyContent: 'space-between' },
   headerButton: { alignItems: 'center', height: 48, justifyContent: 'center', width: 56 },
-  headerTitle: { color: COLORS.blue, fontSize: 18, fontWeight: '700' },
+  headerTitle: { color: COLORS.white, fontSize: 18, fontWeight: '700' },
   historyCard: { backgroundColor: COLORS.white, borderRadius: 12, padding: 16 },
   historyDate: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
   historyHeader: { marginBottom: 12, marginTop: 4 },
   selectionTag: { marginTop: 10 },
   historyItem: { alignItems: 'center', borderBottomColor: COLORS.border, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', justifyContent: 'space-between', minHeight: 64, paddingBottom: 8, paddingTop: 8 },
   historyItemMain: { flex: 1, paddingVertical: 8 },
-  historyItemSelected: { backgroundColor: '#EEF5FF', borderRadius: 10, paddingHorizontal: 10 },
+  historyItemSelected: { backgroundColor: COLORS.blueLight, borderRadius: 10, paddingHorizontal: 10 },
   historyItemText: { flex: 1 },
   historyMeta: { color: COLORS.muted, fontSize: 12, marginTop: 4 },
   historyTitle: { color: COLORS.text, fontSize: 18, fontWeight: '700', marginBottom: 8 },
-  imcCaption: { color: '#765D2C', fontSize: 13, marginTop: 4 },
-  imcCard: { alignItems: 'center', backgroundColor: COLORS.paleYellow, borderRadius: 12, flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20, marginTop: 20, padding: 20 },
+  imcCaption: { color: COLORS.limeText, fontSize: 13, marginTop: 4 },
+  imcCard: { alignItems: 'center', backgroundColor: COLORS.limeLight, borderRadius: 12, flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20, marginTop: 20, padding: 20 },
   imcLabel: { color: COLORS.text, fontSize: 24, fontWeight: '800' },
   imcValue: { color: COLORS.blue, fontSize: 30, fontWeight: '800' },
   lastEvaluation: { color: COLORS.muted, fontSize: 14, marginTop: 6 },
@@ -969,7 +976,7 @@ const styles = StyleSheet.create({
   metricModalBackdrop: { backgroundColor: 'rgba(23, 33, 43, 0.4)', flex: 1, justifyContent: 'flex-end' },
   metricModalCard: { backgroundColor: COLORS.white, borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: '92%', padding: 22, paddingBottom: 30 },
   metricOption: { alignItems: 'center', borderRadius: 8, flexDirection: 'row', justifyContent: 'space-between', minHeight: 44, paddingHorizontal: 12, paddingVertical: 10 },
-  metricOptionActive: { backgroundColor: COLORS.paleYellow },
+  metricOptionActive: { backgroundColor: COLORS.blueLight },
   metricOptionText: { color: COLORS.text, fontSize: 16 },
   metricOptionTextActive: { color: COLORS.blue, fontWeight: '700' },
   modalBackdrop: { backgroundColor: 'rgba(23, 33, 43, 0.4)', flex: 1, justifyContent: 'flex-end' },
@@ -977,17 +984,18 @@ const styles = StyleSheet.create({
   modalCloseButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   modalHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 18 },
   modalTitle: { color: COLORS.text, fontSize: 22, fontWeight: '700' },
-  pointerLabel: { backgroundColor: COLORS.text, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7 },
-  pointerLabelDate: { color: '#C9D3DC', fontSize: 11 },
-  pointerLabelSub: { color: '#C9D3DC', fontSize: 11, marginTop: 1 },
+  pointerLabel: { backgroundColor: COLORS.blue, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7 },
+  pointerLabelDate: { color: COLORS.onNavyMuted, fontSize: 11 },
+  pointerLabelSub: { color: COLORS.onNavyMuted, fontSize: 11, marginTop: 1 },
   pointerLabelText: { color: COLORS.white, fontSize: 14, fontWeight: '700', marginTop: 1 },
   studentHeading: { alignItems: 'center', flexDirection: 'row', gap: 12 },
+  detailTitle: { color: COLORS.text, fontSize: 20, fontWeight: '700' },
   studentNameInline: { flex: 1, fontSize: 26 },
-  summaryDivider: { backgroundColor: '#EBD9B4', height: StyleSheet.hairlineWidth, marginVertical: 12 },
-  summaryLabel: { color: COLORS.yellowText, fontSize: 13, fontWeight: '600', marginBottom: 2 },
-  summaryRitmo: { color: COLORS.yellowText, fontSize: 13, lineHeight: 18, marginTop: 10 },
+  summaryDivider: { backgroundColor: '#CFE39A', height: StyleSheet.hairlineWidth, marginVertical: 12 },
+  summaryLabel: { color: COLORS.limeText, fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  summaryRitmo: { color: COLORS.limeText, fontSize: 13, lineHeight: 18, marginTop: 10 },
   tabContent: { flex: 1 },
-  variacaoLabel: { color: COLORS.yellowText, flex: 1, fontSize: 14 },
+  variacaoLabel: { color: COLORS.limeText, flex: 1, fontSize: 14 },
   variacaoRow: { alignItems: 'center', flexDirection: 'row', minHeight: 30 },
   variacaoValue: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
   variacaoValueWrap: { alignItems: 'center', flexDirection: 'row', gap: 2 },
@@ -1006,7 +1014,7 @@ const styles = StyleSheet.create({
   stateTitle: { color: COLORS.text, fontSize: 17, textAlign: 'center' },
   studentName: { color: COLORS.text, fontSize: 30, fontWeight: '800' },
   tabBar: { backgroundColor: COLORS.white, borderBottomColor: COLORS.border, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', paddingHorizontal: 16, paddingTop: 12 },
-  tabButton: { alignItems: 'center', backgroundColor: '#EEF3F8', borderRadius: 999, flex: 1, marginRight: 8, minHeight: 44, justifyContent: 'center', paddingVertical: 8 },
+  tabButton: { alignItems: 'center', backgroundColor: '#E6EAF2', borderRadius: 999, flex: 1, marginRight: 8, minHeight: 44, justifyContent: 'center', paddingVertical: 8 },
   tabButtonActive: { backgroundColor: COLORS.blue },
   tabButtonText: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
   tabButtonTextActive: { color: COLORS.white },

@@ -28,7 +28,7 @@ import { DateInput } from '@/components/date-input';
 import { API_ROOT, comPerfil } from '@/constants/api';
 import { usePerfil } from '@/contexts/perfil';
 import { converterDataParaISO, formatarDataParaEntrada } from '@/utils/date';
-import { COLORS } from '@/constants/ui';
+import { COLORS, SHADOW } from '@/constants/ui';
 
 type Turno = 'manha' | 'tarde' | 'noite';
 type TurnoFilter = 'todos' | Turno;
@@ -292,6 +292,8 @@ export default function AlunosScreen() {
                   return (
                     <Pressable
                       key={option.value}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
                       onPress={() => setTurnoFilter(option.value)}
                       style={[styles.turnoButton, active && styles.turnoButtonActive]}
                     >
@@ -300,6 +302,12 @@ export default function AlunosScreen() {
                   );
                 })}
               </View>
+              {/* Quantos alunos aparecem com a busca e o filtro atuais. */}
+              <Text accessibilityLiveRegion="polite" style={styles.countText}>
+                {filteredAlunos.length === alunos.length
+                  ? `${alunos.length} aluno${alunos.length === 1 ? '' : 's'}`
+                  : `${filteredAlunos.length} de ${alunos.length} alunos`}
+              </Text>
             </View>
           }
           ListEmptyComponent={
@@ -360,6 +368,7 @@ export default function AlunosScreen() {
 
 const styles = StyleSheet.create({
   studentTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+  countText: { color: COLORS.muted, fontSize: 13, fontWeight: '600', marginTop: 10 },
   container: { backgroundColor: COLORS.background, flex: 1 },
   emptyList: { flexGrow: 1, padding: 20 },
   fab: { alignItems: 'center', backgroundColor: COLORS.blue, borderRadius: 28, bottom: 22, elevation: 4, height: 56, justifyContent: 'center', position: 'absolute', right: 20, shadowColor: '#000', shadowOffset: { height: 2, width: 0 }, shadowOpacity: 0.2, shadowRadius: 4, width: 56 },
@@ -388,7 +397,7 @@ const styles = StyleSheet.create({
   studentInfo: { alignItems: 'center', flex: 1, flexDirection: 'row' },
   studentMeta: { color: COLORS.muted, fontSize: 14, marginTop: 4 },
   studentName: { color: COLORS.text, fontSize: 17, fontWeight: '700' },
-  studentRow: { alignItems: 'center', backgroundColor: COLORS.white, borderBottomColor: COLORS.border, borderBottomWidth: 1, flexDirection: 'row', minHeight: 76, paddingHorizontal: 4 },
+  studentRow: { ...SHADOW.card, alignItems: 'center', backgroundColor: COLORS.white, borderRadius: 12, flexDirection: 'row', marginBottom: 8, minHeight: 76, paddingHorizontal: 6 },
   turnoButton: { alignItems: 'center', backgroundColor: COLORS.white, borderColor: COLORS.border, borderRadius: 999, borderWidth: 1, marginRight: 8, paddingHorizontal: 12, paddingVertical: 8 },
   turnoButtonActive: { backgroundColor: COLORS.blue, borderColor: COLORS.blue },
   turnoButtonText: { color: COLORS.text, fontSize: 12, fontWeight: '600' },

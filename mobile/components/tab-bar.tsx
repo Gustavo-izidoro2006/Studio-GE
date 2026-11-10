@@ -118,13 +118,13 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 const styles = StyleSheet.create({
   bar: {
     backgroundColor: COLORS.white,
-    borderTopColor: '#E4E7EA',
+    borderTopColor: COLORS.border,
     borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     paddingTop: 6,
   },
   item: { alignItems: 'center', flex: 1, justifyContent: 'flex-start', minHeight: 44, paddingHorizontal: 2 },
   iconSlot: { alignItems: 'center', height: 32, justifyContent: 'center', width: 60 },
-  pill: { backgroundColor: COLORS.blueLight, borderRadius: 16, height: 32, position: 'absolute', width: 60 },
+  pill: { backgroundColor: COLORS.limePill, borderRadius: 16, height: 32, position: 'absolute', width: 60 },
   label: { fontSize: 12, marginTop: 3, textAlign: 'center' },
 });

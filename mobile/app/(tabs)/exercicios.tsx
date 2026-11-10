@@ -9,7 +9,7 @@ import { FieldLabel } from '@/components/field-label';
 import { StaggerItem } from '@/components/motion';
 import { API_ROOT, comPerfil } from '@/constants/api';
 import { usePerfil } from '@/contexts/perfil';
-import { COLORS } from '@/constants/ui';
+import { COLORS, SHADOW } from '@/constants/ui';
 
 type Exercicio = { id: number; nome: string; grupo_muscular: string; descricao: string };
 type ExercicioForm = { nome: string; grupo_muscular: string; descricao: string };
@@ -116,28 +116,28 @@ export default function ExerciciosScreen() {
 const styles = StyleSheet.create({
   action: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   backdrop: { backgroundColor: 'rgba(23, 33, 43, 0.35)', flex: 1, justifyContent: 'flex-end' },
-  container: { backgroundColor: '#FFFFFF', flex: 1 },
+  container: { backgroundColor: COLORS.white, flex: 1 },
   copy: { flex: 1, marginLeft: 12 },
   emptyList: { flexGrow: 1, padding: 20 },
-  fab: { alignItems: 'center', backgroundColor: '#185FA5', borderRadius: 28, bottom: 22, elevation: 4, height: 56, justifyContent: 'center', position: 'absolute', right: 20, width: 56 },
-  icon: { alignItems: 'center', backgroundColor: '#DCEAF7', borderRadius: 24, height: 48, justifyContent: 'center', width: 48 },
+  fab: { alignItems: 'center', backgroundColor: COLORS.blue, borderRadius: 28, bottom: 22, elevation: 4, height: 56, justifyContent: 'center', position: 'absolute', right: 20, width: 56 },
+  icon: { alignItems: 'center', backgroundColor: COLORS.blueLight, borderRadius: 24, height: 48, justifyContent: 'center', width: 48 },
   info: { alignItems: 'center', flex: 1, flexDirection: 'row' },
-  input: { borderColor: '#D9E0E6', borderRadius: 8, borderWidth: 1, color: '#17212B', fontSize: 16, height: 48, marginBottom: 16, paddingHorizontal: 14 },
-  label: { color: '#17212B', fontSize: 14, fontWeight: '600', marginBottom: 7 },
+  input: { borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, color: COLORS.text, fontSize: 16, height: 48, marginBottom: 16, paddingHorizontal: 14 },
+  label: { color: COLORS.text, fontSize: 14, fontWeight: '600', marginBottom: 7 },
   list: { padding: 16, paddingBottom: 96 },
   loader: { flex: 1 },
-  message: { color: '#6B7680', fontSize: 15, marginTop: 8, textAlign: 'center' },
-  modal: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 22, paddingBottom: 32 },
+  message: { color: COLORS.muted, fontSize: 15, marginTop: 8, textAlign: 'center' },
+  modal: { backgroundColor: COLORS.white, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 22, paddingBottom: 32 },
   modalHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 22 },
-  modalTitle: { color: '#17212B', fontSize: 22, fontWeight: '700' },
-  name: { color: '#17212B', fontSize: 17, fontWeight: '700' },
-  meta: { color: '#6B7680', fontSize: 14, marginTop: 4 },
-  retry: { backgroundColor: '#185FA5', borderRadius: 8, marginTop: 18, paddingHorizontal: 18, paddingVertical: 12 },
-  retryText: { color: '#FFFFFF', fontWeight: '700' },
-  row: { alignItems: 'center', backgroundColor: '#FFFFFF', borderBottomColor: '#D9E0E6', borderBottomWidth: 1, flexDirection: 'row', minHeight: 76, paddingHorizontal: 4 },
-  save: { alignItems: 'center', backgroundColor: '#185FA5', borderRadius: 8, height: 50, justifyContent: 'center' },
-  saveText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  modalTitle: { color: COLORS.text, fontSize: 22, fontWeight: '700' },
+  name: { color: COLORS.text, fontSize: 17, fontWeight: '700' },
+  meta: { color: COLORS.muted, fontSize: 14, marginTop: 4 },
+  retry: { backgroundColor: COLORS.blue, borderRadius: 8, marginTop: 18, paddingHorizontal: 18, paddingVertical: 12 },
+  retryText: { color: COLORS.white, fontWeight: '700' },
+  row: { ...SHADOW.card, alignItems: 'center', backgroundColor: COLORS.white, borderRadius: 12, flexDirection: 'row', marginBottom: 8, minHeight: 76, paddingHorizontal: 6 },
+  save: { alignItems: 'center', backgroundColor: COLORS.blue, borderRadius: 8, height: 50, justifyContent: 'center' },
+  saveText: { color: COLORS.white, fontSize: 16, fontWeight: '700' },
   state: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 30 },
-  stateTitle: { color: '#17212B', fontSize: 19, fontWeight: '700', marginTop: 12, textAlign: 'center' },
+  stateTitle: { color: COLORS.text, fontSize: 19, fontWeight: '700', marginTop: 12, textAlign: 'center' },
   textarea: { height: 88, paddingTop: 12, textAlignVertical: 'top' },
 });

@@ -5,7 +5,8 @@ import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { StaggerItem } from '@/components/motion';
+import { BrandLogo } from '@/components/brand-logo';
+import { FadeInView, StaggerItem } from '@/components/motion';
 import { PressableScale } from '@/components/pressable-scale';
 import { Tag } from '@/components/tag';
 import { COLORS, RADIUS, TOUCH } from '@/constants/ui';
@@ -70,7 +71,14 @@ export default function PerfilScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        {/* Capa do dono: logo e nome do Studio (specs/identidade-visual.md). */}
+        <FadeInView style={styles.hero}>
+          <BrandLogo size={92} />
+          <Text style={styles.heroTitle}>Studio Geração Energia</Text>
+          <Text style={styles.heroSubtitle}>Alunos, treinos e financeiro em um só lugar</Text>
+        </FadeInView>
+        <View style={styles.content}>
         <Text style={styles.title}>Onde você está trabalhando?</Text>
         <Text style={styles.subtitle}>
           Cada perfil tem os próprios alunos, exercícios, treinos e financeiro. Troque de perfil para não misturar os dados.
@@ -112,6 +120,7 @@ export default function PerfilScreen() {
         <View style={styles.note}>
           <MaterialIcons name="info-outline" size={20} color={COLORS.blueDark} />
           <Text style={styles.noteText}>O perfil escolhido aparece no topo de todas as abas e continua ativo quando você fecha o app.</Text>
+        </View>
         </View>
       </ScrollView>
 
@@ -157,6 +166,10 @@ const styles = StyleSheet.create({
   closeButton: { alignItems: 'center', height: TOUCH, justifyContent: 'center', width: TOUCH },
   container: { backgroundColor: COLORS.background, flex: 1 },
   content: { padding: 20, paddingBottom: 32 },
+  hero: { alignItems: 'center', backgroundColor: COLORS.blue, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, paddingBottom: 26, paddingHorizontal: 20, paddingTop: 10 },
+  heroSubtitle: { color: COLORS.onNavyMuted, fontSize: 14, marginTop: 4, textAlign: 'center' },
+  heroTitle: { color: COLORS.white, fontSize: 21, fontWeight: '700', marginTop: 12, textAlign: 'center' },
+  scroll: { paddingBottom: 12 },
   iconCircle: { alignItems: 'center', backgroundColor: COLORS.blueLight, borderRadius: 26, height: 52, justifyContent: 'center', width: 52 },
   iconCircleActive: { backgroundColor: COLORS.blue },
   input: { borderColor: COLORS.border, borderRadius: RADIUS.sm, borderWidth: 1, color: COLORS.text, fontSize: 16, height: 48, marginBottom: 16, paddingHorizontal: 14 },

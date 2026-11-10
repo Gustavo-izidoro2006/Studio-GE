@@ -74,11 +74,11 @@ class MedidaViewSet(PorPerfilMixin, viewsets.ModelViewSet):
 	campo_perfil = 'aluno__perfil'
 
 	def get_queryset(self):
-		queryset = super().get_queryset()
 		aluno = self.request.query_params.get('aluno')
 		if aluno:
-			queryset = queryset.filter(aluno_id=aluno)
-		return queryset
+			# As avaliações de um aluno seguem o perfil dele, não o perfil ativo no app.
+			return Medida.objects.order_by('-data_avaliacao', '-id').filter(aluno_id=aluno)
+		return super().get_queryset()
 
 
 class ExercicioViewSet(PorPerfilMixin, viewsets.ModelViewSet):

@@ -4,11 +4,12 @@ import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 
 import { COLORS, RADIUS } from '@/constants/ui';
 
-export type TagTone = 'neutral' | 'blue' | 'yellow' | 'green' | 'red';
+export type TagTone = 'neutral' | 'blue' | 'lime' | 'yellow' | 'green' | 'red';
 type IconName = React.ComponentProps<typeof MaterialIcons>['name'];
 
 const TONES: Record<TagTone, { bg: string; fg: string }> = {
-  neutral: { bg: '#EEF1F4', fg: COLORS.muted },
+  neutral: { bg: '#EDF0F5', fg: COLORS.muted },
+  lime: { bg: COLORS.limeLight, fg: COLORS.limeText },
   blue: { bg: COLORS.blueLight, fg: COLORS.blueDark },
   yellow: { bg: COLORS.paleYellow, fg: COLORS.yellowText },
   green: { bg: COLORS.lightGreen, fg: COLORS.green },

@@ -85,7 +85,9 @@ function somarMes(mes: string, delta: number) {
 
 function nomeDoMes(mes: string) {
   const [ano, m] = mes.split('-').map(Number);
-  return `${MESES[m - 1]} de ${ano}`;
+  const nome = MESES[m - 1];
+  // Só o mês com inicial maiúscula: "Novembro de 2026" (não "Novembro De 2026").
+  return `${nome.charAt(0).toUpperCase()}${nome.slice(1)} de ${ano}`;
 }
 
 function mesAbreviado(mes: string) {
@@ -239,7 +241,7 @@ export default function FinanceiroScreen() {
     navigation.setOptions({
       headerRight: () => (
         <Pressable accessibilityRole="button" accessibilityLabel="Adicionar despesa" onPress={abrirNovaDespesa} style={styles.headerAction}>
-          <MaterialIcons name="add" size={22} color={COLORS.blue} />
+          <MaterialIcons name="add" size={20} color={COLORS.blue} />
           <Text style={styles.headerActionText}>Despesa</Text>
         </Pressable>
       ),
@@ -403,7 +405,11 @@ export default function FinanceiroScreen() {
     const taxa = Number(r.taxa_inadimplencia);
     // A API não devolve o total de mensalidades; ele sai de em_atraso / taxa.
     const totalMensalidades = taxa > 0 ? Math.round(r.em_atraso / taxa) : 0;
-    const textoAtraso = r.em_atraso === 0 ? 'Nenhum aluno em atraso (0%)' : `${r.em_atraso} de ${totalMensalidades} em atraso (${Math.round(taxa * 100)}%)`;
+    // Conta todos os atrasados que aparecem na lista (inclusive de meses anteriores), para o resumo não contradizer a lista.
+    const atrasadosNaLista = r.pendencias.filter((p) => p.status === 'atrasado').length;
+    const textoAtraso = atrasadosNaLista === 0
+      ? 'Nenhum pagamento em atraso'
+      : `${atrasadosNaLista} pagamento${atrasadosNaLista === 1 ? '' : 's'} em atraso${r.em_atraso > 0 ? ` · ${r.em_atraso} de ${totalMensalidades} deste mês (${Math.round(taxa * 100)}%)` : ' de meses anteriores'}`;
     const semMensalidades = Number(r.previsto) === 0 && r.pendencias.length === 0;
 
     const maximo = Math.max(100, ...r.serie.flatMap((s) => [Number(s.recebido), Number(s.despesas)]));
@@ -697,8 +703,8 @@ const styles = StyleSheet.create({
   container: { backgroundColor: COLORS.background, flex: 1 },
   despesaRow: { alignItems: 'center', borderBottomColor: COLORS.border, borderBottomWidth: 1, flexDirection: 'row', minHeight: 64, paddingVertical: 8 },
   emptyText: { color: COLORS.muted, fontSize: 15, paddingVertical: 12 },
-  headerAction: { alignItems: 'center', flexDirection: 'row', height: 44, justifyContent: 'center', minWidth: 44, paddingHorizontal: 10 },
-  headerActionText: { color: COLORS.blue, fontSize: 15, fontWeight: '700' },
+  headerAction: { alignItems: 'center', backgroundColor: COLORS.lime, borderRadius: 999, flexDirection: 'row', gap: 2, height: 36, justifyContent: 'center', marginRight: 12, marginVertical: 4, paddingHorizontal: 12 },
+  headerActionText: { color: COLORS.blue, fontSize: 14, fontWeight: '700' },
   historySearch: { alignItems: 'center', backgroundColor: COLORS.background, borderColor: COLORS.border, borderRadius: 8, borderWidth: 1, flexDirection: 'row', marginBottom: 8, minHeight: 48, paddingHorizontal: 12 },
   historySearchClear: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   historySearchInput: { color: COLORS.text, flex: 1, fontSize: 16, minHeight: 44, paddingHorizontal: 10 },
@@ -722,7 +728,7 @@ const styles = StyleSheet.create({
   modalTitle: { color: COLORS.text, fontSize: 20, fontWeight: '700' },
   monthArrow: { alignItems: 'center', height: 48, justifyContent: 'center', width: 48 },
   monthRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  monthText: { color: COLORS.text, fontSize: 18, fontWeight: '700', textTransform: 'capitalize' },
+  monthText: { color: COLORS.text, fontSize: 18, fontWeight: '700' },
   okRow: { alignItems: 'center', flexDirection: 'row', gap: 8, paddingVertical: 12 },
   okText: { color: COLORS.green, fontSize: 16, fontWeight: '700' },
   payButton: { alignItems: 'center', backgroundColor: COLORS.blue, borderRadius: 8, justifyContent: 'center', marginLeft: 10, minHeight: 44, minWidth: 56, paddingHorizontal: 12 },
@@ -751,6 +757,6 @@ const styles = StyleSheet.create({
   stateTitle: { color: COLORS.text, fontSize: 18, fontWeight: '700', marginTop: 12, textAlign: 'center' },
   toast: { alignItems: 'center', backgroundColor: COLORS.text, borderRadius: 10, bottom: 16, flexDirection: 'row', left: 16, minHeight: 48, paddingLeft: 16, position: 'absolute', right: 16 },
   toastAction: { alignItems: 'center', justifyContent: 'center', minHeight: 44, minWidth: 44, paddingHorizontal: 10 },
-  toastActionText: { color: COLORS.yellow, fontSize: 15, fontWeight: '700' },
+  toastActionText: { color: COLORS.lime, fontSize: 15, fontWeight: '700' },
   toastText: { color: COLORS.white, fontSize: 15 },
 });

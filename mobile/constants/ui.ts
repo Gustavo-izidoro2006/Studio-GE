@@ -1,21 +1,35 @@
-// Base visual do app (specs/acabamento-visual-v012.md, G3).
+// Base visual do app (specs/acabamento-visual-v012.md e specs/identidade-visual.md).
 // Um único lugar para cores, raios, espaçamentos, sombra e tempos de animação.
+//
+// Identidade do Studio Geração Energia (cores do logo): azul-marinho #002478 e verde-limão #A8DC24.
+// Regras de uso:
+// - marinho: cabeçalhos, botões principais, texto de destaque, ícones e seleções;
+// - limão: fundos e botões de destaque, sempre com texto marinho por cima (nunca texto limão sobre branco);
+// - âmbar: só "atenção" (a vencer, adaptação, despesas); vermelho: erro/atraso; verde: pago/sucesso.
 
 export const COLORS = {
-  blue: '#185FA5',
-  blueDark: '#0C447C',
-  blueLight: '#E6F1FB',
-  lightBlue: '#DCEAF7',
+  // Marca — o nome "blue" é mantido para não mexer em todas as telas: é o marinho do logo.
+  blue: '#002478',
+  blueDark: '#001A57',
+  blueLight: '#E3E9F6',
+  lightBlue: '#E3E9F6',
+  lime: '#A8DC24',
+  limeLight: '#EEF7D6',
+  limePill: '#E8F5C8',
+  limeText: '#3D5A0A',
+  onNavyMuted: '#C9D4EC',
+  // Atenção (âmbar)
   yellow: '#EF9F27',
   paleYellow: '#FFF3D9',
   yellowText: '#633806',
   lightYellow: '#FCEBCB',
-  text: '#17212B',
-  // Cinza de apoio: 5,4:1 sobre branco (o anterior, #6B7680, ficava abaixo de 4,5:1 sobre o fundo).
+  // Neutros
+  text: '#14213D',
   muted: '#5F6B76',
-  border: '#D9E0E6',
-  background: '#F7F9FB',
+  border: '#D5DCE8',
+  background: '#F4F6FA',
   white: '#FFFFFF',
+  // Estados
   danger: '#B42318',
   lightRed: '#FBE4E1',
   green: '#1E6B35',
@@ -32,16 +46,16 @@ export const TOUCH = 44;
 export const SHADOW = {
   card: {
     elevation: 2,
-    shadowColor: '#0B2540',
+    shadowColor: '#002478',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 6,
   },
   floating: {
     elevation: 5,
-    shadowColor: '#0B2540',
+    shadowColor: '#001A57',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.22,
     shadowRadius: 10,
   },
 } as const;

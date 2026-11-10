@@ -1,6 +1,6 @@
 # Spec — Acabamento visual v0.1.2
 
-Origem: `docs/ajustes-finais-v012.md` (itens G1 a G6). Objetivo: um app mais bonito e organizado **sem mudar o funcionamento nem a paleta** (azul #185FA5, amarelo #EF9F27, branco).
+Origem: `docs/ajustes-finais-v012.md` (itens G1 a G6). Objetivo: um app mais bonito e organizado **sem mudar o funcionamento**. A paleta foi trocada depois pela identidade do Studio: ver `specs/identidade-visual.md`.
 
 ## G1 — Barra de abas
 - As cinco abas mostram o nome inteiro (Alunos, Exercícios, Treinos, Financeiro, Perfil), sem corte, no mesmo tamanho de texto.

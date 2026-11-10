@@ -187,7 +187,7 @@ Esperado:
 - Fica de fora: pulsação contínua de selos (distrai em uso diário).
 
 ### Fora do escopo do acabamento
-- Trocar paleta, fontes ou criar modo escuro.
+- Trocar fontes ou criar modo escuro. (A paleta acabou trocada depois, a pedido: `specs/identidade-visual.md`.)
 - Imagens externas ou ilustrações baixadas.
 
 ---
@@ -217,7 +217,8 @@ Todos os itens acima foram implementados e viraram specs:
 | Treinos (T2–T4) | descrito em T2–T4 acima (sem spec separada) |
 | Perfis (backend e app) | `specs/perfis.md` |
 | Dados de demonstração com os três perfis | `specs/dados-demonstracao.md` (atualizada) |
+| Identidade visual do Studio (marinho + limão, logo, ícone, abertura) e revisão de layout | `specs/identidade-visual.md` |
 
-Verificação: `tsc` sem erros, lint sem erros, 27 testes do backend passando (11 novos de perfis), migration testada em banco vazio e em banco com dados (tudo foi para Academia), telas conferidas renderizadas.
+Verificação: `tsc` sem erros, lint sem erros, 28 testes do backend passando (12 novos de perfis), migration testada em banco vazio e em banco com dados (tudo foi para Academia), telas conferidas renderizadas.
 
 Versão do app: **0.1.2** (`versionCode` 3).
